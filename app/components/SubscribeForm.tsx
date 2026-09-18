@@ -208,8 +208,7 @@ export default function SubscribeForm() {
             <span className="step">3</span>주간 업데이트 이메일 받기
           </h2>
           <p className="sub">
-            선택한 총 <strong>{totalIds.size}개</strong> 규격·인증에 변경이 감지되면 매주 월요일 오전 9시(KST)에 원문 발췌와 링크를 보내드립니다. 변경이 없는 주는 메일을 보내지
-            않습니다.
+            선택한 총 <strong>{totalIds.size}개</strong> 규격·인증의 변경 사항을 매주 월요일 오전 9시(KST)에 원문 발췌와 링크로 보내드립니다. 변경이 없는 주에는 "이번 주 변경 없음"으로 안내드립니다.
           </p>
           <label htmlFor="email">이메일 주소</label>
           <input id="email" type="email" required placeholder="ra@company.co.kr" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />

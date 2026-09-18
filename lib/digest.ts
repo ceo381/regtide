@@ -103,7 +103,10 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       ${productLine}
       ${updates.length ? sections : empty}
       <hr style="border:0;border-top:1px solid #eaecf0;margin:32px 0 16px">
-      <p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0">본 메일은 공개 규제 소스(식약처, 국가법령정보센터, Federal Register, EU Commission, ISO/IEC)를 키워드 기반으로 자동 수집·분류한 참고 정보이며 법적 효력이 없습니다. 발췌문은 원문 일부이므로 반드시 원문 링크를 확인하세요.<br>
+      <p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0 0 8px"><strong style="color:#667085">이용 안내 및 면책</strong><br>
+      본 메일은 식약처, 국가법령정보센터, 미국 Federal Register, EU Commission, ISO/IEC 등 공개된 규제 정보 소스를 자동으로 수집·분류하여 제공하는 <strong>참고용 정보</strong>입니다. 법률·규제 자문이 아니며 법적 효력이 없습니다. 발췌문은 원문의 일부이므로 정확한 내용과 시행일은 반드시 원문 링크에서 확인하시기 바랍니다.<br>
+      수집 소스의 변경, 사이트 접근 제한, 분류 규칙의 한계 등으로 일부 변경 사항이 누락되거나 지연되거나 관련 없는 항목이 포함될 수 있습니다. 본 정보를 바탕으로 한 인허가·품질·사업상 판단과 그 결과에 대한 책임은 이용자에게 있으며, RegTide 는 이에 대해 책임을 지지 않습니다. 각 원문의 저작권은 해당 발행 기관에 있습니다. 전문은 <a href="${esc(site)}/disclaimer" style="color:#667085">이용 안내 및 면책조항</a>을 참고하세요.</p>
+      <p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0">
       더 이상 수신을 원치 않으시면 <a href="${esc(unsub)}" style="color:#667085">수신거부</a>를 눌러주세요. 수신거부 시 이메일 주소는 즉시 삭제됩니다.</p>
     </div>
   </div></body></html>`;

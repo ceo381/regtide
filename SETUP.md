@@ -231,7 +231,7 @@ git push -u origin main
 
 ### I-5. 배포 후 마무리
 1. **사이트 주소 확정**: `Settings → Domains` 의 실제 주소를 `NEXT_PUBLIC_SITE_URL` 에 반영(끝에 `/` 없이) → `Deployments → ⋯ → Redeploy`. 틀리면 메일의 수신거부 링크가 localhost 를 가리킴.
-2. **크론 확인**: `Settings → Cron Jobs` 에 `/api/cron/weekly`, `0 0 * * 1` (UTC = 월 09:00 KST). Hobby 는 실행 시각이 수십 분 흔들릴 수 있음(주간 리포트라 무방). Vercel 이 `Authorization: Bearer <CRON_SECRET>` 를 자동 첨부.
+2. **크론 확인**: `Settings → Cron Jobs` 에 `/api/cron/weekly`, `0 0 * * 1` (UTC = 월 09:00 KST). 크론은 기본적으로 변경 사항이 없는 구독자에게도 "이번 주 변경 없음" 메일을 보냅니다(`?sendEmpty=0` 을 붙이면 변경 있을 때만 발송). Hobby 는 실행 시각이 수십 분 흔들릴 수 있음(주간 리포트라 무방). Vercel 이 `Authorization: Bearer <CRON_SECRET>` 를 자동 첨부.
 3. **배포 서버에서 수동 실행**:
    ```powershell
    curl.exe -H "Authorization: Bearer 실제CRON_SECRET값" "https://<주소>/api/cron/weekly?recent=1&sendEmpty=1"
@@ -249,7 +249,7 @@ git push -u origin main
 5. 다른 주소로 구독 후 I-5-3 명령 재실행 → 도착 확인
 
 ### I-7. 공개 전 마지막 점검
-1. `app/privacy/page.tsx` 의 `[운영자 성명]`, `[이메일 주소]` 를 실제 값으로, `<em>※ 서비스 운영자 정보를…</em>` 줄 삭제 → `git add .` → `git commit -m "Fill privacy officer"` → `git push` → Vercel 자동 재배포
+1. `app/privacy/page.tsx` 와 `app/disclaimer/page.tsx` 의 `[운영자 성명]`, `[이메일 주소]` 를 실제 값으로, 각 파일의 `<em>※ 서비스 운영자 정보를…</em>` 줄 삭제 → `git add .` → `git commit -m "Fill privacy officer"` → `git push` → Vercel 자동 재배포
 2. Supabase Free 는 7일간 요청이 없으면 일시정지. 주간 크론이 깨워주지만 멈추면 대시보드에서 `Restore`.
 3. 첫 몇 주 Vercel `Logs` 에서 월요일 크론 소요 시간 확인. 50초를 넘기면 `vercel.json` 크론을 3개로 분리: `?step=collect` `0 0 * * 1`, `?step=classify` `5 0 * * 1`, `?step=send` `10 0 * * 1`.
 

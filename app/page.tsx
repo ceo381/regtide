@@ -35,9 +35,9 @@ export default function Home() {
       <SubscribeForm />
 
       <footer>
-        본 서비스는 공개된 규제 정보를 자동 수집·요약하여 제공하는 참고용 도구이며, 요약 내용은 법적 효력이 없습니다. 반드시 원문을 확인하세요.
+        본 서비스는 공개된 규제 정보를 자동 수집·분류하여 제공하는 <strong>참고용 도구</strong>이며, 법률·규제 자문이 아니고 법적 효력이 없습니다. 일부 변경 사항이 누락·지연되거나 관련 없는 항목이 포함될 수 있으므로, 인허가·품질 관련 판단 전에 반드시 원문을 확인하세요. 본 정보에 근거한 판단과 그 결과에 대한 책임은 이용자에게 있습니다.
         <br />
-        <Link href="/privacy">개인정보 처리방침</Link>
+        <Link href="/disclaimer">이용 안내 및 면책조항</Link> · <Link href="/privacy">개인정보 처리방침</Link>
       </footer>
     </main>
   );

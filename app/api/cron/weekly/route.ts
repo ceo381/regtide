@@ -12,7 +12,8 @@ export const dynamic = "force-dynamic";
  * 1) 지난 8일치 수집 → 2) 미분류 항목 규칙 기반 분류 → 3) 구독자별 다이제스트 발송
  * 수동 실행: curl -H "Authorization: Bearer $CRON_SECRET" https://<site>/api/cron/weekly
  * ?step=collect|classify|send 로 단계별 실행 가능 (타임아웃 회피용)
- * ?recent=1 집계 구간을 최근 8일로 (테스트용), ?sendEmpty=1 변경 없어도 발송 (테스트용)
+ * ?recent=1 집계 구간을 최근 8일로 (테스트용)
+ * ?sendEmpty=0 변경 없는 구독자에게는 발송하지 않음 (기본은 변경이 없어도 "이번 주 변경 없음" 메일을 보냄)
  */
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
   try {
     if (step === "all" || step === "collect") out.collect = await collectUpdates(since);
     if (step === "all" || step === "classify") out.classify = await classifyPending();
-    if (step === "all" || step === "send") out.send = await sendWeeklyDigests(now, { sendEmpty: req.nextUrl.searchParams.get("sendEmpty") === "1", recent: req.nextUrl.searchParams.get("recent") === "1" });
+    if (step === "all" || step === "send") out.send = await sendWeeklyDigests(now, { sendEmpty: req.nextUrl.searchParams.get("sendEmpty") !== "0", recent: req.nextUrl.searchParams.get("recent") === "1" });
     return NextResponse.json(out);
   } catch (e) {
     return NextResponse.json({ ...out, error: String((e as Error).message ?? e) }, { status: 500 });
