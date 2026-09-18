@@ -278,6 +278,55 @@ git push                         # Vercel 이 감지해 1~2분 내 자동 재배
 
 ---
 
+## K. 운영 메모 (2026-09-19 기준)
+
+### K-1. 현재 배포 상태
+- 서비스 주소: https://regtide-pi.vercel.app (Vercel Hobby)
+- 소스 저장소: https://github.com/ceo381/regtide (Private, 브랜치 `main`)
+- DB: Supabase Free (`subscribers`, `updates`, `page_snapshots`, `deliveries`)
+- 메일: Resend Free — **아직 테스트 모드**. 도메인 미인증 상태라 `ceo@breathings.co.kr` 로만 발송됨 → I-6 완료 전까지 다른 구독자에게는 `failed` 기록
+- 크론: 매주 월요일 00:00 UTC(09:00 KST) `/api/cron/weekly` 자동 실행
+- 정식 테스트를 위해 DB 를 비우고 구독 1건을 등록한 상태 (2026-09-19)
+
+### K-2. 발송 정책
+- 크론은 **변경 사항이 없어도** 구독자에게 "이번 주에는 선택하신 규격·인증에 해당하는 변경 사항이 감지되지 않았습니다" 메일을 보냄 (`sendEmpty` 기본 ON). 끄려면 Vercel `Settings → Cron Jobs` 경로를 `/api/cron/weekly?sendEmpty=0` 으로.
+- 집계 구간: **이번 주 월요일 00:00 KST 이후 저장된 항목**. 월요일 09:00 크론이 방금 수집한 항목이 포함되고, 지난주 크론이 수집한 항목은 제외되어 중복이 없음.
+  (초기 버전은 "지난주 월~이번주 월" 구간을 써서 월요일 수집분이 빠져 메일이 항상 비어 나가는 결함이 있었음 → 2026-09-19 수정. `scripts/selftest.ts` 의 "월요일 크론 시나리오" 테스트가 이를 검증)
+- 이메일 상단 표시 기간은 "지난주 월 ~ 일".
+- 같은 주에 `sent` 기록이 있으면 재발송하지 않음. `failed`/`skipped_empty` 는 다음 실행에서 자동 재시도.
+
+### K-3. 첫 정기 발송(월요일) 확인 방법
+1. 월요일 09:00~10:00 KST 사이에 `ceo@breathings.co.kr` 수신함(스팸 포함) 확인
+2. Vercel 프로젝트 → `Logs` 탭에서 `/api/cron/weekly` 실행 기록과 소요 시간 확인 (50초 이상이면 I-7-3 의 크론 분리 필요)
+3. Supabase `deliveries` 테이블: `week_start` 가 그 주 월요일, `status` 가 `sent` 이면 성공. `failed` 면 `error` 열에 원인.
+4. `updates` 테이블에 지난 8일치 항목이 들어왔는지, `impact`/`catalog_ids` 가 채워졌는지 확인
+5. 메일이 오지 않았고 `deliveries` 도 비어 있으면 크론이 실행되지 않은 것 → Vercel `Settings → Cron Jobs` 등록 여부 확인, 수동 실행:
+   ```powershell
+   curl.exe -H "Authorization: Bearer 실제CRON_SECRET값" "https://regtide-pi.vercel.app/api/cron/weekly"
+   ```
+
+### K-4. 구독해지
+- 사용자: 매주 메일 하단 **구독해지** 링크 → 토큰 일치 시 `subscribers` 행 즉시 삭제(이메일 포함), `deliveries` 연쇄 삭제 → 홈으로 이동해 "구독해지가 완료되었습니다" 표시. 같은 링크 재클릭 시 "유효하지 않은 구독해지 링크".
+- 운영자 수동 처리: 아직 메일을 받지 못한 구독자(구독 직후 등)는 링크가 없으므로 Supabase `Table Editor → subscribers` 에서 해당 행 삭제.
+- 향후 개선 후보: 홈페이지에 "이메일 입력 → 구독해지 링크 재발송" 폼 (`/api/unsubscribe/request`).
+- 용어: 서비스 전반에서 "수신거부" 대신 **"구독해지"** 로 통일 (2026-09-19).
+
+### K-5. 면책·개인정보 페이지
+- `/disclaimer` 이용 안내 및 면책조항 (`app/disclaimer/page.tsx`): 참고용 정보·법적 효력 없음·원문 확인 의무·누락/지연 가능성·책임 제한·저작권·서비스 변경/중단·구독해지·문의. **AI 관련 표현 없음**("정해진 규칙에 따라 자동으로 수집·분류").
+- `/privacy` 개인정보 처리방침 (`app/privacy/page.tsx`)
+- 이메일 하단과 홈페이지 푸터에 요약 면책 문구 + 두 페이지 링크
+- 운영자 정보 기입 완료: 이인표 / ceo@breathings.co.kr (두 페이지 모두)
+
+### K-6. 남은 할 일
+- [ ] Vercel 자동 배포 점검 (`Settings → Git` Production Branch = `main`) — push 후 `Deployments` 에 새 항목이 생기는지 확인
+- [ ] Resend 도메인 인증(`mail.breathings.co.kr`) → `MAIL_FROM` 변경 → 실사용자 발송 가능 (I-6)
+- [ ] 테스트 중 노출된 `CRON_SECRET` 새 값으로 교체 → Redeploy
+- [ ] Vercel 환경변수 `DISABLED_SOURCES=page_watch:iso` 추가 (iso.org 403 로그 제거)
+- [ ] 첫 월요일 크론 결과 확인 (K-3)
+- [ ] 사용자 피드백에 따라 `lib/catalog.ts` 키워드 조정
+
+---
+
 ## 자주 만나는 문제
 
 | 증상 | 원인·해결 |
@@ -296,3 +345,6 @@ git push                         # Vercel 이 감지해 1~2분 내 자동 재배
 | `git: 'commint' is not a git command` | 오타. `git commit` |
 | `git push` → `Everything up-to-date` | 커밋 안 됨 → J 절 참고 |
 | 구독해지 링크가 localhost 를 가리킴 | Vercel `NEXT_PUBLIC_SITE_URL` 미수정 → 배포 주소로 변경 후 Redeploy |
+| push 했는데 배포 사이트에 내용이 반영 안 됨 | ① `git log --oneline -3` 와 GitHub 커밋이 같은지 ② Vercel `Settings → Git` 의 Production Branch 가 `main` 인지 ③ `Deployments` 에 새 항목이 생기는지 (J 절) ④ 브라우저 캐시 → `Ctrl+F5` |
+| 월요일 메일이 비어 있거나 안 옴 | K-3 참고. `deliveries.status` 확인 (`sent`/`skipped_empty`/`failed`), Vercel `Logs` 에서 크론 실행 기록 확인 |
+| `npm run selftest` 가 esbuild 플랫폼 오류 | Windows 에서 설치한 `node_modules` 를 다른 OS(WSL·리눅스)에서 실행한 경우 → 해당 OS 에서 `npm install` 다시 |
