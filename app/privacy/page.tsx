@@ -88,7 +88,7 @@ export default function Privacy() {
 
       <h2>7. 개인정보 보호책임자</h2>
       <p>
-        성명: [운영자 성명] / 연락처: [이메일 주소]
+        성명: [이인표] / 연락처: [ceo@breathings.co.kr]
         <br />
         <em>※ 서비스 운영자 정보를 반드시 기입한 뒤 배포하세요.</em>
       </p>
