@@ -44,7 +44,7 @@ npm run typecheck
 ```powershell
 npm run selftest
 ```
-**확인**: `[1] RSS 파서` ~ `[6] 구독 API 입력 검증` 아래 ✓ 11개, 마지막에 `모든 검증 통과 (11개)`.
+**확인**: `[1] RSS 파서` ~ `[6] 구독 API 입력 검증` 아래 ✓ 12개, 마지막에 `모든 검증 통과 (12개)`.
 이 단계가 통과하면 코드 자체는 정상입니다. 이후 단계는 외부 서비스 연결입니다.
 
 ---
@@ -143,7 +143,7 @@ npx tsx --env-file=.env scripts/run-weekly.ts classify
 ```powershell
 npx tsx --env-file=.env scripts/run-weekly.ts send --recent --send-empty
 ```
-- `--recent`: 집계 구간을 "최근 8일"로 (기본은 지난주 월~이번주 월이라 주중엔 비어 있음)
+- `--recent`: 집계 구간을 "최근 8일"로 (기본은 "이번 주 월요일 00:00 KST 이후 저장된 항목"이라 주중에 새로 수집한 항목은 포함되지만, 지난주에 수집된 항목은 제외됨)
 - `--send-empty`: 해당 항목이 없어도 발송 (템플릿 확인용)
 
 **확인**: `send { sent: 1, skipped: 0, failed: [] }` → 1~2분 내 `[RegTide] 이번 주 의료기기 규제 업데이트 N건` 메일 도착.
@@ -156,38 +156,125 @@ npx tsx --env-file=.env scripts/run-weekly.ts send --recent --send-empty
 
 ## G. 크론 엔드포인트·수신거부 확인
 
-### G-1. 크론 호출 (Vercel이 월요일에 보내는 요청과 동일)
-PowerShell은 `curl` 이 별칭이므로 `curl.exe` 사용:
+### G-1. 크론 호출을 직접 흉내내기
+Vercel 이 매주 월요일 09:00(KST)에 `/api/cron/weekly` 로 보내는 요청과 같은 요청을 로컬에서 보냅니다. PowerShell 은 `curl` 이 다른 명령의 별칭이므로 반드시 `curl.exe`.
 ```powershell
 curl.exe -H "Authorization: Bearer test-secret-1234" "http://localhost:3000/api/cron/weekly?recent=1&sendEmpty=1"
 ```
-**확인**: `collect`/`classify`/`send` 결과가 담긴 JSON. 헤더 없이 호출하면 `{"error":"unauthorized"}`.
+**확인**: 10~40초 후 `"collect":{...}`, `"classify":{...}`, `"send":{...}` 세 부분이 담긴 JSON. 이미 이번 주 발송했다면 `send` 는 `skipped: 1` 이 정상.
+보안 확인: 헤더 없이 `curl.exe "http://localhost:3000/api/cron/weekly"` → `{"error":"unauthorized"}`.
+단계별 실행: `?step=collect` / `?step=classify` / `?step=send`.
+
+> **주의**: 안내문의 `<CRON_SECRET>` 같은 꺾쇠괄호는 "값을 넣는 자리" 표시입니다. 실제 명령에는 괄호 없이 값만 넣습니다. 괄호까지 넣으면 `unauthorized`.
 
 ### G-2. 수신거부
-받은 메일 하단 `수신거부` 클릭 → `localhost:3000/?unsub=ok` 로 이동하며 완료 메시지. Supabase `subscribers` 에서 행 삭제 확인.
+1. 받은 메일 맨 아래 `수신거부` 링크 클릭 (개발 서버가 켜져 있어야 함)
+2. `http://localhost:3000/?unsub=ok` 로 이동 + 초록 "수신거부가 완료되었습니다" 확인
+3. Supabase `subscribers` 새로고침 → 해당 행 삭제됨 (`deliveries` 도 연쇄 삭제)
+4. 같은 링크 재클릭 → `?unsub=invalid` + 빨간 오류 (토큰 재사용 불가 확인)
+5. 이후 테스트를 위해 화면에서 다시 구독
 
 ---
 
 ## H. 프로덕션 빌드 확인
 
-첫 터미널에서 `Ctrl+C` 로 개발 서버 종료 후:
-```powershell
-npm run build
-npm run start
-```
-**확인**: `✓ Compiled successfully`, `Route (app)` 표에 `/`, `/privacy`, `/api/cron/weekly`, `/api/subscribe`, `/api/unsubscribe` 표시. http://localhost:3000 열림. 확인 후 `Ctrl+C`.
+1. 개발 서버 터미널에서 `Ctrl + C` (Y 입력)
+2. `npm run build` — **확인**: `✓ Compiled successfully`, `Route (app)` 표에 `/`, `/_not-found`, `/api/cron/weekly`, `/api/subscribe`, `/api/unsubscribe`, `/privacy`
+3. `npm run start` → http://localhost:3000 정상 표시 확인 → `Ctrl + C`
 
 ---
 
 ## I. Vercel 배포 (무료)
 
-1. GitHub에 새 저장소 생성 → 프로젝트 push (`.env` 는 `.gitignore` 로 제외됨)
-2. https://vercel.com → `Add New → Project` → 저장소 Import
-3. `Environment Variables` 에 `.env` 의 6개 항목 입력. `NEXT_PUBLIC_SITE_URL` 은 배포 후 받을 도메인(예 `https://regtide.vercel.app`)
-4. `Deploy` → 완료 후 도메인 접속 확인
-5. `vercel.json` 의 크론(`0 0 * * 1` UTC = 월 09:00 KST)이 자동 등록됨. Vercel 대시보드 `Settings → Cron Jobs` 에서 확인
-6. Hobby 플랜 함수 제한 60초: 소스가 늘어 초과되면 크론을 `?step=collect`, `?step=classify`, `?step=send` 3개로 나눠 5분 간격 등록
-7. 실사용자 발송 전: Resend 도메인 인증 + `MAIL_FROM` 변경, `app/privacy/page.tsx` 의 **개인정보 보호책임자 성명·연락처** 기입
+### I-1. Git 설치·설정
+```powershell
+git --version              # git version 2.x 가 나와야 함. 없으면 https://git-scm.com/download/win
+git config --global user.name "이름"
+git config --global user.email "이메일"
+```
+
+### I-2. GitHub 저장소
+https://github.com/new → Repository name `regtide`, **Private**, README/.gitignore/license 모두 체크 해제 → `Create repository` → `https://github.com/<아이디>/regtide.git` 복사.
+
+### I-3. 첫 push
+```powershell
+git init
+git add .
+git status        # ★ .env, node_modules, .next 가 목록에 없어야 함 (있으면 중단하고 확인)
+git commit -m "RegTide initial release"
+git branch -M main
+git remote add origin https://github.com/<아이디>/regtide.git
+git push -u origin main
+```
+`git push` 시 브라우저 로그인 창 → GitHub 승인. `branch 'main' set up to track 'origin/main'` 이면 성공. GitHub 페이지 새로고침해 파일 확인.
+(`LF will be replaced by CRLF` 경고는 Windows 줄바꿈 안내이며 무시해도 됩니다.)
+
+### I-4. Vercel 프로젝트 생성
+1. https://vercel.com → `Continue with GitHub` 로 가입 (Hobby, 무료)
+2. `Add New… → Project` → `regtide` Import (안 보이면 `Adjust GitHub App Permissions`)
+3. Framework Preset `Next.js` 자동 인식 확인
+4. `Environment Variables` 입력 (따옴표 없이 값만):
+
+| Key | Value | Type |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Project URL | **Config** (공개되어도 무방) |
+| `SUPABASE_SERVICE_ROLE_KEY` | `sb_secret_…` | Secret |
+| `RESEND_API_KEY` | `re_…` | Secret |
+| `MAIL_FROM` | `RegTide <onboarding@resend.dev>` (I-6 후 변경) | Config |
+| `CRON_SECRET` | **새 무작위 문자열 32자+** (로컬 값 재사용 금지) | Secret |
+| `NEXT_PUBLIC_SITE_URL` | 배포 주소 (예 `https://regtide-pi.vercel.app`) | **Config** |
+| `DISABLED_SOURCES` | iso.org 가 403이면 `page_watch:iso` | Config |
+
+> `NEXT_PUBLIC_` 로 시작하는 변수를 `Secret` 으로 저장하면 "Remove the public framework prefix…" 빨간 경고가 뜹니다. 값이 URL이라 공개되어도 무방하므로 **Config** 가 맞습니다. 이미 Secret 으로 저장했다면 Config 로 변경이 불가하니 **삭제 후 Config 로 다시 생성** → Redeploy.
+
+5. `Deploy` → 1~3분 → 배포 주소 확인
+
+### I-5. 배포 후 마무리
+1. **사이트 주소 확정**: `Settings → Domains` 의 실제 주소를 `NEXT_PUBLIC_SITE_URL` 에 반영(끝에 `/` 없이) → `Deployments → ⋯ → Redeploy`. 틀리면 메일의 수신거부 링크가 localhost 를 가리킴.
+2. **크론 확인**: `Settings → Cron Jobs` 에 `/api/cron/weekly`, `0 0 * * 1` (UTC = 월 09:00 KST). Hobby 는 실행 시각이 수십 분 흔들릴 수 있음(주간 리포트라 무방). Vercel 이 `Authorization: Bearer <CRON_SECRET>` 를 자동 첨부.
+3. **배포 서버에서 수동 실행**:
+   ```powershell
+   curl.exe -H "Authorization: Bearer 실제CRON_SECRET값" "https://<주소>/api/cron/weekly?recent=1&sendEmpty=1"
+   ```
+   **확인**: `collect`/`classify`/`send` JSON + 메일 도착. 헤더 없이 호출 → `unauthorized`. 로그는 Vercel `Logs` 탭.
+4. **배포 주소에서 구독 테스트** → Supabase `subscribers` 에 들어오는지 확인.
+5. **CRON_SECRET 교체**: 테스트 중 터미널·채팅 등에 노출된 값은 새 값으로 바꾸고 Redeploy.
+
+### I-6. Resend 도메인 인증 (실사용자 발송 필수)
+테스트 모드는 **Resend 가입 주소로만** 발송됩니다(`You can only send testing emails to your own email address`). 보유 도메인을 인증하면 누구에게나 발송 가능. 회사 대표 메일 평판과 분리하려면 하위 도메인(예 `mail.breathings.co.kr`) 권장.
+1. https://resend.com/domains → `Add Domain` → `mail.breathings.co.kr` → `Add`
+2. 표시되는 DNS 레코드(DKIM TXT, SPF TXT+MX, 선택 DMARC)를 도메인 관리 업체 DNS 설정에 추가. Name 칸에는 보통 `resend._domainkey.mail` 처럼 앞부분만 입력.
+3. Resend 에서 `Verify` → 수 분~1시간 후 모두 `Verified`
+4. Vercel `MAIL_FROM` → `RegTide <regtide@mail.breathings.co.kr>` 로 변경 → Redeploy. 로컬 `.env` 도 동일하게.
+5. 다른 주소로 구독 후 I-5-3 명령 재실행 → 도착 확인
+
+### I-7. 공개 전 마지막 점검
+1. `app/privacy/page.tsx` 의 `[운영자 성명]`, `[이메일 주소]` 를 실제 값으로, `<em>※ 서비스 운영자 정보를…</em>` 줄 삭제 → `git add .` → `git commit -m "Fill privacy officer"` → `git push` → Vercel 자동 재배포
+2. Supabase Free 는 7일간 요청이 없으면 일시정지. 주간 크론이 깨워주지만 멈추면 대시보드에서 `Restore`.
+3. 첫 몇 주 Vercel `Logs` 에서 월요일 크론 소요 시간 확인. 50초를 넘기면 `vercel.json` 크론을 3개로 분리: `?step=collect` `0 0 * * 1`, `?step=classify` `5 0 * * 1`, `?step=send` `10 0 * * 1`.
+
+---
+
+## J. 코드 수정 후 배포 흐름 (매번 동일)
+
+```powershell
+npm run selftest                 # 로컬 검증
+git add .
+git commit -m "변경 내용 요약"     # ★ commit 철자 주의
+git push                         # Vercel 이 감지해 1~2분 내 자동 재배포
+```
+`git push` 가 `Everything up-to-date` 라고 하면 커밋이 만들어지지 않은 것. `git status` 로 확인:
+- `Changes not staged for commit` → `git add .` 부터
+- `Your branch is ahead of 'origin/main' by 1 commit` → 커밋은 됐고 push 만 안 됨 → `git push`
+- `nothing to commit, working tree clean` → 파일 저장(`Ctrl+S`)을 안 했거나 수정 전
+
+`git log --oneline -3` 으로 최근 커밋 확인. GitHub 저장소 페이지에서 커밋 메시지가 바뀌었는지 보는 것이 가장 확실.
+
+**push 했는데 Vercel 이 자동 배포하지 않을 때**
+1. GitHub 에 커밋이 실제로 올라갔는지 확인 (위)
+2. Vercel `Settings → Git` → `Connected Git Repository` 가 `<아이디>/regtide` 인지, **`Production Branch` 가 `main`** 인지 (처음 `master` 로 시작했다면 `master` 로 잡혀 있을 수 있음 → `main` 으로 변경)
+3. `Deployments` 탭 새로고침 — push 후 10~30초 뒤 `Building` 으로 나타남. `Error` 면 클릭해 로그 확인
+4. 급하면 `Deployments → 최신 커밋 항목 → ⋯ → Redeploy` (반드시 최신 커밋인지 확인)
 
 ---
 
@@ -199,6 +286,13 @@ npm run start
 | `--env-file` 인식 안 됨 | Node 20.6 미만 → Node 업데이트 |
 | `환경변수가 설정되지 않았습니다` | `.env` 파일명이 `.env.txt` 이거나 값 누락 |
 | `Invalid API key` (Supabase) | `anon`/`publishable` 키를 넣은 경우 → Secret key 로 교체 |
-| 수신거부 링크가 잘못된 포트 | `NEXT_PUBLIC_SITE_URL` 과 실제 포트 불일치 |
-| 메일 `failed` | Resend 테스트 모드는 가입 이메일로만 발송 가능 |
-| 크론 호출 `unauthorized` | `Authorization: Bearer <CRON_SECRET>` 헤더 누락/불일치 |
+| `Could not find the 'matched_keywords' column` | 구 스키마로 테이블 생성됨 → SQL Editor 에서 `alter table updates add column if not exists matched_keywords text[] not null default '{}';` |
+| `The yourdomain.com domain is not verified` | `.env` 의 `MAIL_FROM` 이 `.env.example` 자리표시자 그대로 → `RegTide <onboarding@resend.dev>` 로 변경 후 저장. 같은 키가 두 줄 있는지도 확인 |
+| `You can only send testing emails to your own email address (…)` | Resend 테스트 모드 → 괄호 안 주소로 구독하거나 I-6 도메인 인증 |
+| `send { skipped: 1 }` 인데 메일 못 받음 | 이번 주 이미 **성공** 발송 기록 있음 → `deliveries` 해당 행 삭제 후 재실행. (`failed`/`skipped_empty` 는 자동 재시도) |
+| 크론 호출 `unauthorized` | 헤더 누락, `CRON_SECRET` 불일치, 값에 `< >` 괄호 포함, 환경변수 변경 후 Redeploy 안 함 |
+| `collect` 의 `skipped` 에 iso.org 403 | 사이트가 자동화 차단. `DISABLED_SOURCES=page_watch:iso` 로 끄기. ISO 개정은 EU 조화규격·Federal Register 로 대체 감지 |
+| Vercel "Remove the public framework prefix…" 경고 | `NEXT_PUBLIC_*` 를 Secret 으로 저장 → 삭제 후 Config 로 재생성 |
+| `git: 'commint' is not a git command` | 오타. `git commit` |
+| `git push` → `Everything up-to-date` | 커밋 안 됨 → J 절 참고 |
+| 수신거부 링크가 localhost 를 가리킴 | Vercel `NEXT_PUBLIC_SITE_URL` 미수정 → 배포 주소로 변경 후 Redeploy |

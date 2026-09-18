@@ -17,20 +17,34 @@ function fmtDate(s: string | null) {
   return new Date(s).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
-/** 지난 주 월요일(KST) 00:00 ~ 이번 주 월요일 00:00 구간 */
+/**
+ * 주간 집계 구간
+ *  - start/end : 이번 발송에 포함할 updates 의 created_at 범위.
+ *                크론은 월요일 09:00(KST)에 "수집 → 분류 → 발송"을 한 번에 실행하므로,
+ *                그 실행에서 방금 저장된 항목(created_at = 월요일 09:00)이 포함되어야 한다.
+ *                따라서 start = 이번 주 월요일 00:00(KST), end = 지금. 지난주 월요일 실행분(created_at = 지난주 월 09:00)은
+ *                start 이전이라 자연히 제외되어 중복 발송이 없다.
+ *  - weekStart  : 중복 발송 방지 키(deliveries.week_start). 이번 주 월요일 날짜.
+ *  - periodStart/periodEnd : 이메일 상단에 표시할 "지난 한 주" 기간(지난주 월 ~ 일). 표시용.
+ */
 export function weekWindow(now = new Date(), opts: { recent?: boolean } = {}) {
   if (opts.recent) {
     // 테스트용: 최근 8일 (주중에 파이프라인을 돌려볼 때 사용)
     const start = new Date(now.getTime() - 8 * 86400_000);
-    return { start, end: now, weekStart: now.toISOString().slice(0, 10) };
+    return { start, end: now, weekStart: now.toISOString().slice(0, 10), periodStart: start, periodEnd: now };
   }
   const kst = new Date(now.getTime() + 9 * 3600_000);
   const day = kst.getUTCDay(); // 0=일
   const diffToMonday = (day + 6) % 7;
-  const thisMonday = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() - diffToMonday));
-  const start = new Date(thisMonday.getTime() - 7 * 86400_000 - 9 * 3600_000);
-  const end = new Date(thisMonday.getTime() - 9 * 3600_000);
-  return { start, end, weekStart: new Date(thisMonday.getTime() - 7 * 86400_000).toISOString().slice(0, 10) };
+  const thisMondayKst = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() - diffToMonday); // 월 00:00 KST (KST 눈금)
+  const thisMondayUtc = new Date(thisMondayKst - 9 * 3600_000);
+  return {
+    start: thisMondayUtc,
+    end: now,
+    weekStart: new Date(thisMondayKst).toISOString().slice(0, 10),
+    periodStart: new Date(thisMondayUtc.getTime() - 7 * 86400_000),
+    periodEnd: thisMondayUtc,
+  };
 }
 
 export function relevantUpdates(sub: SubscriberRow, updates: UpdateRow[]): UpdateRow[] {
@@ -123,14 +137,14 @@ export async function sendWeeklyDigests(
   mailer: Mailer = resendMailer(),
 ): Promise<SendResult> {
   const sb = supabaseAdmin();
-  const { start, end, weekStart } = weekWindow(now, { recent: opts.recent });
+  const { start, end, weekStart, periodStart, periodEnd } = weekWindow(now, { recent: opts.recent });
 
   const { data: updatesData, error: uErr } = await sb
     .from("updates")
     .select("*")
     .not("classified_at", "is", null)
     .gte("created_at", start.toISOString())
-    .lt("created_at", end.toISOString());
+    .lte("created_at", end.toISOString());
   if (uErr) throw uErr;
   const updates = (updatesData ?? []) as UpdateRow[];
 
@@ -161,7 +175,7 @@ export async function sendWeeklyDigests(
         from,
         to: sub.email,
         subject: `[RegTide] 이번 주 의료기기 규제 업데이트 ${mine.length}건 (${weekStart} 주)`,
-        html: renderDigestHtml(sub, mine, { start, end }),
+        html: renderDigestHtml(sub, mine, { start: periodStart, end: periodEnd }),
       });
       await record({ update_ids: mine.map((u) => u.id), provider_message_id: sent.id ?? null, status: "sent", error: null });
       await sb.from("subscribers").update({ last_sent_at: new Date().toISOString() }).eq("id", sub.id);

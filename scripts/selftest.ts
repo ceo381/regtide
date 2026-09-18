@@ -169,11 +169,33 @@ async function main() {
     assert.equal(rows.length, 1, "행이 중복 생성되지 않고 갱신됨");
     assert.equal(rows[0].status, "sent");
   });
-  await ok("weekWindow: 월요일 09:00 KST 실행 시 지난주 월~이번주 월 구간", () => {
-    const w = weekWindow(new Date("2026-09-21T00:00:00Z")); // 월 09:00 KST
-    assert.equal(w.weekStart, "2026-09-14");
-    assert.equal(w.start.toISOString(), "2026-09-13T15:00:00.000Z"); // 9/14 00:00 KST
-    assert.equal(w.end.toISOString(), "2026-09-20T15:00:00.000Z");   // 9/21 00:00 KST
+  await ok("weekWindow: 월요일 09:00 KST 크론 실행 시 그 실행에서 수집한 항목이 포함되는 구간", () => {
+    const cronTime = new Date("2026-09-21T00:00:00Z"); // 월 09:00 KST
+    const w = weekWindow(cronTime);
+    assert.equal(w.weekStart, "2026-09-21", "중복 방지 키는 이번 주 월요일");
+    assert.equal(w.start.toISOString(), "2026-09-20T15:00:00.000Z", "start = 이번 주 월 00:00 KST");
+    assert.equal(w.end.getTime(), cronTime.getTime(), "end = 지금");
+    // 방금 수집된 항목(created_at = 크론 시각)은 포함, 지난주 크론 항목은 제외
+    const justCollected = new Date(cronTime.getTime() + 60_000).toISOString();
+    const lastWeekRun = new Date(cronTime.getTime() - 7 * 86400_000).toISOString();
+    assert.ok(justCollected >= w.start.toISOString(), "이번 실행 수집분 포함");
+    assert.ok(lastWeekRun < w.start.toISOString(), "지난주 실행 수집분 제외");
+    // 이메일 표시 기간은 지난주 월 ~ 일
+    assert.equal(w.periodStart.toISOString(), "2026-09-13T15:00:00.000Z");
+    assert.equal(w.periodEnd.toISOString(), "2026-09-20T15:00:00.000Z");
+  });
+  await ok("월요일 크론 시나리오: 수집 직후 발송하면 그 항목이 메일에 들어간다", async () => {
+    const cronTime = new Date("2026-09-21T00:05:00Z");
+    // 크론 실행 중 저장된 항목(created_at = 크론 시각)
+    db.tables.updates.push({ id: "u-cron", source: "mfds_rss:data0005", external_id: "cron-1", jurisdiction: "KR", title: "의료기기 허가·신고·심사 등에 관한 규정 일부개정고시", url: "https://x", published_at: "2026-09-19T00:00:00Z", raw: null, summary_ko: "발췌", impact: "high", catalog_ids: ["kr-approval"], matched_keywords: ["허가·신고·심사"], classified_at: cronTime.toISOString(), created_at: cronTime.toISOString() });
+    db.tables.subscribers.push({ id: "s6", email: "cron@company.kr", unsubscribe_token: "tok6", active: true, products: [], catalog_ids: ["kr-approval"], last_sent_at: null });
+    const before = sent.length;
+    const r = await sendWeeklyDigests(cronTime, {}, mailer); // recent 옵션 없이 = 실제 크론과 동일
+    assert.equal(r.failed.length, 0);
+    const m = sent.slice(before).find((x) => x.to === "cron@company.kr");
+    assert.ok(m, "크론 시각에 수집된 항목으로 메일이 발송되어야 함");
+    assert.ok(m!.html.includes("허가·신고·심사"));
+    assert.ok(m!.html.includes("2026. 09. 14.") && m!.html.includes("2026. 09. 20."), "표시 기간은 지난주 월~일");
   });
 
   console.log("\n[6] 구독 API 입력 검증");

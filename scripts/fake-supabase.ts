@@ -117,6 +117,7 @@ export function createFakeSupabase(): FakeDB {
       not(c: string, _o: string, v: unknown) { filters.push((r) => (v === null ? r[c] != null : r[c] !== v)); return b; },
       gte(c: string, v: string) { filters.push((r) => String(r[c]) >= v); return b; },
       lt(c: string, v: string) { filters.push((r) => String(r[c]) < v); return b; },
+      lte(c: string, v: string) { filters.push((r) => String(r[c]) <= v); return b; },
       order(c: string, o: { ascending?: boolean } = {}) { orderBy = { col: c, asc: o.ascending !== false }; return b; },
       limit(n: number) { lim = n; return b; },
       maybeSingle() { single = true; return b; },
