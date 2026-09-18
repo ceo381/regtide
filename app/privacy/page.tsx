@@ -90,7 +90,6 @@ export default function Privacy() {
       <p>
         성명: [이인표] / 연락처: [ceo@breathings.co.kr]
         <br />
-        <em>※ 서비스 운영자 정보를 반드시 기입한 뒤 배포하세요.</em>
       </p>
 
       <h2>8. 고지</h2>
