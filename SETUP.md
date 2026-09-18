@@ -154,7 +154,7 @@ npx tsx --env-file=.env scripts/run-weekly.ts send --recent --send-empty
 
 ---
 
-## G. 크론 엔드포인트·수신거부 확인
+## G. 크론 엔드포인트·구독해지 확인
 
 ### G-1. 크론 호출을 직접 흉내내기
 Vercel 이 매주 월요일 09:00(KST)에 `/api/cron/weekly` 로 보내는 요청과 같은 요청을 로컬에서 보냅니다. PowerShell 은 `curl` 이 다른 명령의 별칭이므로 반드시 `curl.exe`.
@@ -167,9 +167,9 @@ curl.exe -H "Authorization: Bearer test-secret-1234" "http://localhost:3000/api/
 
 > **주의**: 안내문의 `<CRON_SECRET>` 같은 꺾쇠괄호는 "값을 넣는 자리" 표시입니다. 실제 명령에는 괄호 없이 값만 넣습니다. 괄호까지 넣으면 `unauthorized`.
 
-### G-2. 수신거부
-1. 받은 메일 맨 아래 `수신거부` 링크 클릭 (개발 서버가 켜져 있어야 함)
-2. `http://localhost:3000/?unsub=ok` 로 이동 + 초록 "수신거부가 완료되었습니다" 확인
+### G-2. 구독해지
+1. 받은 메일 맨 아래 `구독해지` 링크 클릭 (개발 서버가 켜져 있어야 함)
+2. `http://localhost:3000/?unsub=ok` 로 이동 + 초록 "구독해지가 완료되었습니다" 확인
 3. Supabase `subscribers` 새로고침 → 해당 행 삭제됨 (`deliveries` 도 연쇄 삭제)
 4. 같은 링크 재클릭 → `?unsub=invalid` + 빨간 오류 (토큰 재사용 불가 확인)
 5. 이후 테스트를 위해 화면에서 다시 구독
@@ -230,7 +230,7 @@ git push -u origin main
 5. `Deploy` → 1~3분 → 배포 주소 확인
 
 ### I-5. 배포 후 마무리
-1. **사이트 주소 확정**: `Settings → Domains` 의 실제 주소를 `NEXT_PUBLIC_SITE_URL` 에 반영(끝에 `/` 없이) → `Deployments → ⋯ → Redeploy`. 틀리면 메일의 수신거부 링크가 localhost 를 가리킴.
+1. **사이트 주소 확정**: `Settings → Domains` 의 실제 주소를 `NEXT_PUBLIC_SITE_URL` 에 반영(끝에 `/` 없이) → `Deployments → ⋯ → Redeploy`. 틀리면 메일의 구독해지 링크가 localhost 를 가리킴.
 2. **크론 확인**: `Settings → Cron Jobs` 에 `/api/cron/weekly`, `0 0 * * 1` (UTC = 월 09:00 KST). 크론은 기본적으로 변경 사항이 없는 구독자에게도 "이번 주 변경 없음" 메일을 보냅니다(`?sendEmpty=0` 을 붙이면 변경 있을 때만 발송). Hobby 는 실행 시각이 수십 분 흔들릴 수 있음(주간 리포트라 무방). Vercel 이 `Authorization: Bearer <CRON_SECRET>` 를 자동 첨부.
 3. **배포 서버에서 수동 실행**:
    ```powershell
@@ -295,4 +295,4 @@ git push                         # Vercel 이 감지해 1~2분 내 자동 재배
 | Vercel "Remove the public framework prefix…" 경고 | `NEXT_PUBLIC_*` 를 Secret 으로 저장 → 삭제 후 Config 로 재생성 |
 | `git: 'commint' is not a git command` | 오타. `git commit` |
 | `git push` → `Everything up-to-date` | 커밋 안 됨 → J 절 참고 |
-| 수신거부 링크가 localhost 를 가리킴 | Vercel `NEXT_PUBLIC_SITE_URL` 미수정 → 배포 주소로 변경 후 Redeploy |
+| 구독해지 링크가 localhost 를 가리킴 | Vercel `NEXT_PUBLIC_SITE_URL` 미수정 → 배포 주소로 변경 후 Redeploy |

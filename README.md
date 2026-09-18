@@ -96,7 +96,7 @@ npx tsx --env-file=.env scripts/run-weekly.ts send --recent --send-empty   # 최
 ## 개인정보
 
 - 수집 항목: 이메일, 품목명·선택 규격, 동의 시각·IP (`consent_at`, `consent_ip`, `consent_version`)
-- 수신거부 링크(`/api/unsubscribe?token=…`) 클릭 시 구독자 레코드를 즉시 삭제 (발송 이력은 cascade 삭제)
+- 구독해지 링크(`/api/unsubscribe?token=…`) 클릭 시 구독자 레코드를 즉시 삭제 (발송 이력은 cascade 삭제)
 - `app/privacy/page.tsx` 의 **개인정보 보호책임자 성명·연락처**를 반드시 기입한 뒤 배포하세요.
 - Supabase 테이블은 RLS 활성화 상태이며 서버에서 service_role 키로만 접근합니다.
 
@@ -108,7 +108,7 @@ app/
   privacy/page.tsx         개인정보 처리방침
   components/SubscribeForm.tsx
   api/subscribe            구독 저장 (zod 검증, 간단한 rate limit)
-  api/unsubscribe          수신거부(즉시 삭제)
+  api/unsubscribe          구독해지(즉시 삭제)
   api/cron/weekly          주간 파이프라인
 lib/
   catalog.ts               규격·인증 카탈로그 (핵심 데이터)

@@ -222,7 +222,7 @@ async function main() {
     await call({ ...good, products: [{ name: "혈당측정기", category: "체외진단의료기기", catalogIds: ["kr-ivd-act"] }] });
     assert.equal(db.tables.subscribers.filter((s) => s.email === "ra@company.co.kr").length, 1);
   });
-  await ok("수신거부: 토큰 일치 시 구독자 삭제 후 리다이렉트", async () => {
+  await ok("구독해지: 토큰 일치 시 구독자 삭제 후 리다이렉트", async () => {
     const { GET } = await import("@/app/api/unsubscribe/route");
     const mk = (t: string) => ({ nextUrl: new URL(`http://localhost/api/unsubscribe?token=${t}`) }) as never;
     const res = await GET(mk("tok1"));
