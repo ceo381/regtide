@@ -241,11 +241,11 @@ git push -u origin main
 5. **CRON_SECRET 교체**: 테스트 중 터미널·채팅 등에 노출된 값은 새 값으로 바꾸고 Redeploy.
 
 ### I-6. Resend 도메인 인증 (실사용자 발송 필수)
-테스트 모드는 **Resend 가입 주소로만** 발송됩니다(`You can only send testing emails to your own email address`). 보유 도메인을 인증하면 누구에게나 발송 가능. 회사 대표 메일 평판과 분리하려면 하위 도메인(예 `mail.breathings.co.kr`) 권장.
-1. https://resend.com/domains → `Add Domain` → `mail.breathings.co.kr` → `Add`
+테스트 모드는 **Resend 가입 주소로만** 발송됩니다(`You can only send testing emails to your own email address`). 보유 도메인을 인증하면 누구에게나 발송 가능. 회사 대표 메일 평판과 분리하려면 하위 도메인(예 `news.breathings.co.kr`) 권장.
+1. https://resend.com/domains → `Add Domain` → `news.breathings.co.kr` → `Add`
 2. 표시되는 DNS 레코드(DKIM TXT, SPF TXT+MX, 선택 DMARC)를 도메인 관리 업체 DNS 설정에 추가. Name 칸에는 보통 `resend._domainkey.mail` 처럼 앞부분만 입력.
 3. Resend 에서 `Verify` → 수 분~1시간 후 모두 `Verified`
-4. Vercel `MAIL_FROM` → `RegTide <regtide@mail.breathings.co.kr>` 로 변경 → Redeploy. 로컬 `.env` 도 동일하게.
+4. Vercel `MAIL_FROM` → `RegTide <regtide@news.breathings.co.kr>` 로 변경 → Redeploy. 로컬 `.env` 도 동일하게.
 5. 다른 주소로 구독 후 I-5-3 명령 재실행 → 도착 확인
 
 ### I-7. 공개 전 마지막 점검
@@ -319,11 +319,45 @@ git push                         # Vercel 이 감지해 1~2분 내 자동 재배
 
 ### K-6. 남은 할 일
 - [ ] Vercel 자동 배포 점검 (`Settings → Git` Production Branch = `main`) — push 후 `Deployments` 에 새 항목이 생기는지 확인
-- [ ] Resend 도메인 인증(`mail.breathings.co.kr`) → `MAIL_FROM` 변경 → 실사용자 발송 가능 (I-6)
+- [ ] Resend 도메인 인증(`news.breathings.co.kr`) → `MAIL_FROM` 변경 → 실사용자 발송 가능 (I-6)
 - [ ] 테스트 중 노출된 `CRON_SECRET` 새 값으로 교체 → Redeploy
 - [ ] Vercel 환경변수 `DISABLED_SOURCES=page_watch:iso` 추가 (iso.org 403 로그 제거)
 - [ ] 첫 월요일 크론 결과 확인 (K-3)
 - [ ] 사용자 피드백에 따라 `lib/catalog.ts` 키워드 조정
+
+---
+
+## L. 운영자 리포트 (2026-09-21 추가)
+
+운영자(기본 `ceo@breathings.co.kr`)에게 구독자 현황을 자동으로 보내는 기능입니다. 일반 구독자 발송과 무관하며, 환경변수만 있으면 동작합니다.
+
+### L-1. 두 가지 알림
+| 종류 | 시점 | 내용 |
+|---|---|---|
+| 일일 리포트 | 매일 08:00 KST (Vercel Cron `0 23 * * *`, `/api/cron/daily-report`) | 활성 구독자 수, 최근 24시간 신규 구독자(이메일·품목·규격 수), 24시간 수집 건수(관할별), 이번 주 발송 상태, 많이 선택된 규격 Top 8 |
+| 마일스톤 알림 | 신규 구독으로 활성 구독자가 **N의 배수**(기본 10)가 되는 즉시 | 제목 `[RegTide 운영] 🎉 구독자 N명 달성` + 위와 같은 현황 |
+
+- 마일스톤은 **신규 이메일**이 저장될 때만 판정합니다. 기존 구독자가 설정을 바꿔 다시 저장해도 알림이 가지 않습니다.
+- 알림 발송이 실패해도 구독 처리는 정상 완료됩니다(오류는 Vercel Logs 에 `[admin-report]` 로 기록).
+- Vercel Hobby 는 크론 2개까지 무료이며, 이 프로젝트는 정확히 2개(주간 다이제스트 + 일일 리포트)를 사용합니다. Hobby 크론은 지정 시각 기준 1시간 안에 실행되므로 08:00~09:00 사이에 도착합니다.
+
+### L-2. 설정 (선택)
+Vercel `Settings → Environment Variables` 에 필요 시 추가 후 Redeploy:
+```
+ADMIN_EMAIL=ceo@breathings.co.kr   # 리포트 수신 주소 (미설정 시 이 값)
+MILESTONE_EVERY=10                 # N명마다 알림 (미설정 시 10)
+```
+발신자는 기존 `MAIL_FROM` 을 그대로 씁니다. Resend 도메인이 인증되어 있어야 하며, 미인증(`onboarding@resend.dev`) 상태라도 수신자가 Resend 가입 이메일이면 도착합니다.
+
+### L-3. 수동 테스트
+```powershell
+curl.exe -H "Authorization: Bearer <CRON_SECRET값>" "https://regtide-pi.vercel.app/api/cron/daily-report"
+```
+**확인**: `{"ranAt":"...","id":"...","totalActive":N,"newSubscribers":M}` 응답 후 1~2분 내 `[RegTide 운영] 2026-09-21 구독자 N명 · 신규 M명` 메일 도착.
+마일스톤은 Supabase 에서 `select count(*) from subscribers where active;` 가 9인 상태에서 새 이메일로 구독하면 바로 확인할 수 있습니다(또는 `MILESTONE_EVERY=1` 로 잠시 바꿔 테스트 후 원복).
+
+### L-4. 관련 파일
+`lib/admin-report.ts`(통계 집계·HTML·발송), `app/api/cron/daily-report/route.ts`(크론 엔드포인트), `app/api/subscribe/route.ts`(신규 구독 시 마일스톤 판정), `vercel.json`(크론 2개).
 
 ---
 
@@ -346,5 +380,6 @@ git push                         # Vercel 이 감지해 1~2분 내 자동 재배
 | `git push` → `Everything up-to-date` | 커밋 안 됨 → J 절 참고 |
 | 구독해지 링크가 localhost 를 가리킴 | Vercel `NEXT_PUBLIC_SITE_URL` 미수정 → 배포 주소로 변경 후 Redeploy |
 | push 했는데 배포 사이트에 내용이 반영 안 됨 | ① `git log --oneline -3` 와 GitHub 커밋이 같은지 ② Vercel `Settings → Git` 의 Production Branch 가 `main` 인지 ③ `Deployments` 에 새 항목이 생기는지 (J 절) ④ 브라우저 캐시 → `Ctrl+F5` |
+| 일일 운영 리포트가 안 옴 | Vercel `Settings → Cron Jobs` 에 `/api/cron/daily-report` 가 보이는지(vercel.json 반영은 배포 시), `MAIL_FROM` 도메인 인증 상태, `ADMIN_EMAIL` 오타. L-3 으로 수동 호출해 오류 메시지 확인 |
 | 월요일 메일이 비어 있거나 안 옴 | K-3 참고. `deliveries.status` 확인 (`sent`/`skipped_empty`/`failed`), Vercel `Logs` 에서 크론 실행 기록 확인 |
 | `npm run selftest` 가 esbuild 플랫폼 오류 | Windows 에서 설치한 `node_modules` 를 다른 OS(WSL·리눅스)에서 실행한 경우 → 해당 OS 에서 `npm install` 다시 |

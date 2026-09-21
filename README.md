@@ -90,6 +90,7 @@ npx tsx --env-file=.env scripts/run-weekly.ts send --recent --send-empty   # 최
 2. Environment Variables 에 `.env.example` 항목 모두 등록 (`NEXT_PUBLIC_SITE_URL` 은 배포 도메인)
 3. `vercel.json` 의 크론 `0 0 * * 1` (UTC) = 매주 월요일 09:00 KST 에 `/api/cron/weekly` 호출. Vercel 은 `Authorization: Bearer $CRON_SECRET` 헤더를 자동으로 붙입니다.
 4. 수동 실행: `curl -H "Authorization: Bearer $CRON_SECRET" https://<도메인>/api/cron/weekly`
+5. 운영자 리포트: 매일 08:00 KST `/api/cron/daily-report` 가 `ADMIN_EMAIL`(기본 ceo@breathings.co.kr) 로 구독자 현황을 보내고, 신규 구독으로 활성 구독자가 `MILESTONE_EVERY`(기본 10)의 배수가 되면 즉시 알림을 보냅니다. 구현: `lib/admin-report.ts`.
 
 > **타임아웃 주의** — Hobby 플랜은 함수 실행 60초 제한이 있습니다. 소스가 많아지면 `?step=collect`, `?step=classify`, `?step=send` 로 나눠 크론 3개를 5분 간격으로 등록하세요 (예: `0 0 * * 1`, `5 0 * * 1`, `10 0 * * 1`). Pro 플랜은 `maxDuration = 300` 으로 한 번에 실행됩니다.
 

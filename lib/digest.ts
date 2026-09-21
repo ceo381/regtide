@@ -123,7 +123,7 @@ export interface Mailer {
   send(msg: { from: string; to: string; subject: string; html: string }): Promise<{ id?: string }>;
 }
 
-function resendMailer(): Mailer {
+export function resendMailer(): Mailer {
   const resend = new Resend(process.env.RESEND_API_KEY);
   return {
     async send(msg) {

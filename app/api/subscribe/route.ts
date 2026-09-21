@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { CATALOG_BY_ID, PRODUCT_CATEGORIES } from "@/lib/catalog";
 import { supabaseAdmin } from "@/lib/supabase";
+import { notifyMilestoneIfReached } from "@/lib/admin-report";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,10 @@ export async function POST(req: NextRequest) {
   if (catalogIds.length === 0) return NextResponse.json({ error: "유효한 규격·인증을 선택하세요." }, { status: 400 });
 
   const sb = supabaseAdmin();
+  // 신규 구독인지 확인 (기존 구독자의 설정 변경이면 마일스톤 알림 대상이 아님)
+  const { data: existing } = await sb.from("subscribers").select("id").eq("email", email).maybeSingle();
+  const isNew = !existing;
+
   const { error } = await sb.from("subscribers").upsert(
     {
       email,
@@ -58,6 +63,9 @@ export async function POST(req: NextRequest) {
     { onConflict: "email" },
   );
   if (error) return NextResponse.json({ error: "저장 중 오류가 발생했습니다." }, { status: 500 });
+
+  // 신규 구독으로 활성 구독자 수가 N의 배수(기본 10)에 도달하면 운영자에게 즉시 알림 (실패해도 구독은 성공 처리)
+  if (isNew) await notifyMilestoneIfReached();
 
   return NextResponse.json({ ok: true, catalogCount: catalogIds.length });
 }
