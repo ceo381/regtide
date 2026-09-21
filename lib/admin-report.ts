@@ -126,25 +126,48 @@ export async function sendDailyAdminReport(now = new Date(), mailer: Mailer = re
   return { id, totalActive: stats.totalActive, newSubscribers: stats.newSubscribers.length };
 }
 
+const MILESTONE_STATE_KEY = "admin:milestone_notified";
+
+/** 마지막으로 알림을 보낸 마일스톤(예: 10, 20). 별도 테이블 없이 page_snapshots 에 key-value 로 보관 */
+async function readLastMilestone(): Promise<number> {
+  const sb = supabaseAdmin();
+  const { data } = await sb.from("page_snapshots").select("content").eq("source_key", MILESTONE_STATE_KEY).maybeSingle();
+  const n = Number((data as { content?: string } | null)?.content ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+async function writeLastMilestone(n: number) {
+  const sb = supabaseAdmin();
+  const { error } = await sb
+    .from("page_snapshots")
+    .upsert({ source_key: MILESTONE_STATE_KEY, content_hash: String(n), content: String(n), fetched_at: new Date().toISOString() }, { onConflict: "source_key" });
+  if (error) throw error;
+}
+
 /**
- * 신규 구독 직후 호출. 활성 구독자 수가 MILESTONE_EVERY 의 배수가 되면 운영자에게 즉시 알림.
- * 실패해도 구독 처리에는 영향을 주지 않도록 예외를 삼킨다.
+ * 활성 구독자 수가 마지막 알림 이후 새로운 MILESTONE_EVERY 배수를 넘었으면 운영자에게 알림.
+ *  - 신규 구독 직후와 일일 리포트 크론에서 호출 (배포 전에 이미 넘어간 구간, 발송 실패 등도 다음 호출에서 따라잡음)
+ *  - 정확히 배수일 때만이 아니라 "넘었을 때" 판정 (예: 9→11 이면 10 마일스톤 알림)
+ *  - 실패해도 구독 처리에는 영향을 주지 않도록 예외를 삼킨다.
  */
-export async function notifyMilestoneIfReached(mailer?: Mailer): Promise<{ sent: boolean; total: number }> {
+export async function notifyMilestoneIfReached(mailer?: Mailer): Promise<{ sent: boolean; total: number; milestone: number }> {
   try {
+    const every = MILESTONE_EVERY();
     const total = await countActiveSubscribers();
-    if (total === 0 || total % MILESTONE_EVERY() !== 0) return { sent: false, total };
-    if (!mailer && !process.env.RESEND_API_KEY) return { sent: false, total };
+    const milestone = Math.floor(total / every) * every;
+    const last = await readLastMilestone();
+    if (milestone === 0 || milestone <= last) return { sent: false, total, milestone: last };
+    if (!mailer && !process.env.RESEND_API_KEY) return { sent: false, total, milestone: last };
     const stats = await collectAdminStats(new Date());
     await (mailer ?? resendMailer()).send({
       from: process.env.MAIL_FROM!,
       to: ADMIN_EMAIL(),
-      subject: `[RegTide 운영] 🎉 구독자 ${total}명 달성`,
-      html: renderAdminHtml(stats, { title: `구독자 ${total}명 달성`, lead: `활성 구독자가 ${total}명이 되었습니다. 최근 24시간 현황을 함께 보냅니다.` }),
+      subject: `[RegTide 운영] 🎉 구독자 ${milestone}명 달성 (현재 ${total}명)`,
+      html: renderAdminHtml(stats, { title: `구독자 ${milestone}명 달성`, lead: `활성 구독자가 ${total}명이 되어 ${milestone}명 구간을 넘었습니다. 최근 24시간 현황을 함께 보냅니다.` }),
     });
-    return { sent: true, total };
+    await writeLastMilestone(milestone);
+    return { sent: true, total, milestone };
   } catch (e) {
     console.error("[admin-report] milestone notify failed:", (e as Error).message);
-    return { sent: false, total: -1 };
+    return { sent: false, total: -1, milestone: -1 };
   }
 }

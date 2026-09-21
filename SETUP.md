@@ -337,7 +337,7 @@ git push                         # Vercel 이 감지해 1~2분 내 자동 재배
 | 일일 리포트 | 매일 08:00 KST (Vercel Cron `0 23 * * *`, `/api/cron/daily-report`) | 활성 구독자 수, 최근 24시간 신규 구독자(이메일·품목·규격 수), 24시간 수집 건수(관할별), 이번 주 발송 상태, 많이 선택된 규격 Top 8 |
 | 마일스톤 알림 | 신규 구독으로 활성 구독자가 **N의 배수**(기본 10)가 되는 즉시 | 제목 `[RegTide 운영] 🎉 구독자 N명 달성` + 위와 같은 현황 |
 
-- 마일스톤은 **신규 이메일**이 저장될 때만 판정합니다. 기존 구독자가 설정을 바꿔 다시 저장해도 알림이 가지 않습니다.
+- 마일스톤은 "정확히 N명"이 아니라 **마지막 알림 이후 새 N 구간을 넘었는지**로 판정합니다(9→11명이면 10명 알림). 마지막 알림 구간은 `page_snapshots` 테이블의 `admin:milestone_notified` 행에 저장되며, 신규 구독 직후와 매일 아침 크론에서 확인하므로 배포 전에 이미 넘긴 구간이나 발송 실패분도 다음 확인 때 따라잡습니다.
 - 알림 발송이 실패해도 구독 처리는 정상 완료됩니다(오류는 Vercel Logs 에 `[admin-report]` 로 기록).
 - Vercel Hobby 는 크론 2개까지 무료이며, 이 프로젝트는 정확히 2개(주간 다이제스트 + 일일 리포트)를 사용합니다. Hobby 크론은 지정 시각 기준 1시간 안에 실행되므로 08:00~09:00 사이에 도착합니다.
 
@@ -353,8 +353,8 @@ MILESTONE_EVERY=10                 # N명마다 알림 (미설정 시 10)
 ```powershell
 curl.exe -H "Authorization: Bearer <CRON_SECRET값>" "https://regtide-pi.vercel.app/api/cron/daily-report"
 ```
-**확인**: `{"ranAt":"...","id":"...","totalActive":N,"newSubscribers":M}` 응답 후 1~2분 내 `[RegTide 운영] 2026-09-21 구독자 N명 · 신규 M명` 메일 도착.
-마일스톤은 Supabase 에서 `select count(*) from subscribers where active;` 가 9인 상태에서 새 이메일로 구독하면 바로 확인할 수 있습니다(또는 `MILESTONE_EVERY=1` 로 잠시 바꿔 테스트 후 원복).
+**확인**: `{"ranAt":"...","milestone":{"sent":true|false,"total":N,"milestone":10},"daily":{"id":"...","totalActive":N,"newSubscribers":M}}` 응답 후 1~2분 내 메일 도착. 마일스톤 미발송분이 있으면 `🎉 구독자 10명 달성` 메일이 함께 옵니다.
+마일스톤만 확인: 뒤에 `?only=milestone` 을 붙입니다. 알림을 다시 받아보려면 Supabase SQL `delete from page_snapshots where source_key = 'admin:milestone_notified';` 후 재호출.
 
 ### L-4. 관련 파일
 `lib/admin-report.ts`(통계 집계·HTML·발송), `app/api/cron/daily-report/route.ts`(크론 엔드포인트), `app/api/subscribe/route.ts`(신규 구독 시 마일스톤 판정), `vercel.json`(크론 2개).
