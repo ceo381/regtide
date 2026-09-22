@@ -1,4 +1,4 @@
-import { ROADMAP_HEADLINE, ROADMAP_SUB, VOTE_TITLE } from "@/lib/roadmap";
+import { ROADMAP_HEADLINE, ROADMAP_SUB, VOTE_TITLE, participantsLabel } from "@/lib/roadmap";
 import { loadVoteSummary } from "@/lib/votes";
 
 /** 랜딩 — 티저 + "투표 진행 중" 사실만 (후보·투표 상자 없음). 투표는 구독자 전용 링크(/vote)로만 */
@@ -16,7 +16,7 @@ export default async function Roadmap() {
           <div>
             <strong>{VOTE_TITLE}</strong>
             <span>
-              후보 {open.options.length}개를 두고 구독자들이 다음에 열릴 기능을 고르고 있습니다{open.participants >= 10 ? ` · 지금까지 ${open.participants}명 참여` : ""}.
+              후보 {open.options.length}개를 두고 구독자들이 다음에 열릴 기능을 고르고 있습니다{participantsLabel(open.participants) ? ` · ${participantsLabel(open.participants)}` : ""}.
               투표는 구독 확인 메일과 매주 월요일 리포트의 링크로만 참여할 수 있습니다.
             </span>
           </div>

@@ -610,6 +610,10 @@ async function main() {
     html = roadmapBlockHtml(new Date(), s, "voter1");
     assert.ok(html.includes("여러분이 뽑은 기능이 열렸습니다") && html.includes("아카이브") && !html.includes("다음 기능 투표하기"));
     assert.ok(!/\bAI\b|인공지능/.test(html));
+    const { participantsLabel } = await import("@/lib/roadmap");
+    assert.equal(participantsLabel(12), "", "30명 미만은 표시 안 함");
+    assert.equal(participantsLabel(34), "지금까지 34명 참여");
+    assert.equal(participantsLabel(137), "지금까지 100명 이상 참여");
     assert.ok((await createRound("2차", ["a | 1", "b | 2"])).ok);
     assert.ok((await loadVoteSummary()).open?.title === "2차");
   });

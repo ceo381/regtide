@@ -108,11 +108,13 @@ export async function checkDataAndDelivery(now = new Date()): Promise<HealthIssu
   const weekStart = monday.toISOString().slice(0, 10);
   const dayAgo = new Date(now.getTime() - 24 * HOURS).toISOString();
 
-  const [unclassifiedQ, activeQ, delsQ, sentThisWeekQ] = await Promise.all([
+  const [unclassifiedQ, activeQ, delsQ, sentThisWeekQ, eligibleQ] = await Promise.all([
     sb.from("updates").select("id", { count: "exact", head: true }).is("classified_at", null).lt("created_at", dayAgo),
     sb.from("subscribers").select("id", { count: "exact", head: true }).eq("active", true),
     sb.from("deliveries").select("status, error").eq("week_start", weekStart),
     sb.from("subscribers").select("id", { count: "exact", head: true }).gte("last_sent_at", monday.toISOString()),
+    // 월요일 09:00 KST(= monday 00:00 UTC) 이전에 구독한 활성 구독자 — 이 수가 0 이면 그 주 크론은 보낼 대상이 없었던 것 (런칭 주 오탐 방지)
+    sb.from("subscribers").select("id", { count: "exact", head: true }).eq("active", true).lt("created_at", monday.toISOString()),
   ]);
   const unclassified = unclassifiedQ.count ?? 0;
   if (unclassified > 0) issues.push({ level: "warning", area: "수집", title: `분류되지 않은 항목 ${unclassified}건`, detail: "수집 후 24시간이 지났는데 분류가 안 된 항목이 있습니다. 분류가 안 되면 메일에 실리지 않습니다.", action: "대시보드 운영 작업 → 분류 실행" });
@@ -132,8 +134,11 @@ export async function checkDataAndDelivery(now = new Date()): Promise<HealthIssu
   }
   // 월요일 12:00 KST 이후인데 이번 주 발송 기록이 하나도 없으면 크론 미실행 (Hobby 크론은 최대 1시간 지연 가능)
   const mondayNoonKst = new Date(monday.getTime() + 12 * HOURS - 9 * HOURS);
-  if (now >= mondayNoonKst && dels.length === 0 && active > 0) {
-    issues.push({ level: "critical", area: "발송", title: "이번 주 정기 발송 기록 없음", detail: `월요일 09:00 KST 크론이 실행되지 않았거나 실패했습니다 (활성 구독자 ${active}명).`, action: "Vercel Logs 에서 /api/cron/weekly 확인 후 필요시 ?step=send&confirm=all 로 수동 발송" });
+  const eligible = eligibleQ.count ?? 0;
+  if (now >= mondayNoonKst && dels.length === 0 && eligible > 0) {
+    issues.push({ level: "critical", area: "발송", title: "이번 주 정기 발송 기록 없음", detail: `월요일 09:00 KST 크론이 실행되지 않았거나 실패했습니다 (당시 발송 대상 ${eligible}명, 현재 활성 ${active}명).`, action: "Vercel Logs 에서 /api/cron/weekly 확인 후 필요시 ?step=send&confirm=all 로 수동 발송" });
+  } else if (now >= mondayNoonKst && dels.length === 0 && active > 0) {
+    issues.push({ level: "info", area: "발송", title: "이번 주 발송 대상 없음", detail: `월요일 09:00 KST 시점에는 구독자가 없어 발송할 것이 없었습니다. 첫 정기 발송은 다음 주 월요일입니다 (현재 활성 ${active}명).` });
   }
   // 구독해지 급증 — 최근 7일 해지가 활성 구독자의 5% 이상(최소 3건)이면 확인, 10% 이상이면 즉시
   try {
