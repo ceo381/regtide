@@ -18,6 +18,7 @@ const UNIQUE: Record<string, string[][]> = {
   updates: [["source", "external_id"]],
   page_snapshots: [["source_key"]],
   deliveries: [["subscriber_id", "week_start"]],
+  channels: [["code"]],
 };
 
 function defaults(table: string, row: Row): Row {
@@ -42,7 +43,7 @@ function defaults(table: string, row: Row): Row {
 }
 
 export function createFakeSupabase(): FakeDB {
-  const tables: Record<string, Row[]> = { subscribers: [], updates: [], page_snapshots: [], deliveries: [] };
+  const tables: Record<string, Row[]> = { subscribers: [], updates: [], page_snapshots: [], deliveries: [], channels: [] };
 
   function from(table: string) {
     const rows = () => (tables[table] ??= []);

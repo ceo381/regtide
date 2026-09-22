@@ -199,3 +199,19 @@ footer a { color: var(--muted); }
 .health-area { color: var(--muted); font-size: 12px; margin-top: 3px; white-space: nowrap; }
 .health-detail { color: #344054; margin-top: 2px; }
 .health-action { color: var(--primary); font-size: 12.5px; margin-top: 4px; }
+
+/* 채널 관리 */
+.channel-form { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-top: 12px; background: #fafbfc; }
+.channel-form .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+.channel-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #344054; }
+.channel-form label.span2 { grid-column: 1 / -1; }
+.channel-form input, .channel-form select, .channel-form textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; }
+.channel-form .req { color: var(--danger); }
+.channel-form .row { display: flex; gap: 8px; margin-top: 10px; }
+.btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+.row.between { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.copy code { background: var(--chip); padding: 2px 6px; border-radius: 4px; font-size: 12px; margin-right: 6px; word-break: break-all; }
+.admin-table td.detail { background: #fafbfc; font-size: 13px; color: #344054; }
+.admin-table td.detail .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+.tag-warn { color: #b54708; font-weight: 600; }
+@media (max-width: 800px) { .channel-form .grid2, .admin-table td.detail .grid2 { grid-template-columns: 1fr; } }

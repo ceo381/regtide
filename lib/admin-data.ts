@@ -1,6 +1,7 @@
 import { supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { collectAdminStats, type AdminStats } from "@/lib/admin-report";
 import { computeHealth, type HealthReport } from "@/lib/health";
+import { listChannels, type ChannelRow } from "@/lib/channels";
 
 /** 대시보드용 데이터 묶음 (서버 컴포넌트에서 1회 호출) */
 export interface DashboardData {
@@ -31,12 +32,22 @@ export interface ChannelStat {
   quickRate: number | null;
   productsPerSub: number;
   highRiskShare: number; // 3·4등급 품목 비율
+  /** 등록부 정보 (등록된 채널만) */
+  registry: ChannelRow | null;
+  /** 구독자 / 대상 인원 (등록부에 audience_size 가 있을 때) */
+  conversionRate: number | null;
+  /** 게시 후 경과 시간(시간 단위). posted_at 이 있을 때 */
+  hoursSincePost: number | null;
+  /** 게시 후 24시간 / 72시간 내 구독 수 (posted_at 기준) */
+  within24h: number | null;
+  within72h: number | null;
 }
 
 const PERSONAL = new Set(["naver.com", "gmail.com", "daum.net", "hanmail.net", "nate.com", "kakao.com", "hotmail.com", "outlook.com", "yahoo.com", "icloud.com", "live.com", "me.com"]);
 export const NO_REF = "(직접/미상)";
 
-export function computeChannels(subs: DashboardData["subscribers"], now = new Date()): { channels: ChannelStat[]; channelDaily: DashboardData["channelDaily"] } {
+export function computeChannels(subs: DashboardData["subscribers"], now = new Date(), registry: ChannelRow[] = []): { channels: ChannelStat[]; channelDaily: DashboardData["channelDaily"] } {
+  const reg = new Map(registry.map((r) => [r.code, r]));
   const groups = new Map<string, DashboardData["subscribers"]>();
   for (const s of subs) {
     const k = (s.ref && s.ref.trim()) || NO_REF;
@@ -46,6 +57,9 @@ export function computeChannels(subs: DashboardData["subscribers"], now = new Da
   const h24 = now.getTime() - 24 * 3600_000;
   const d7 = now.getTime() - 7 * 86400_000;
   const median = (xs: number[]) => { if (!xs.length) return null; const a = [...xs].sort((x, y) => x - y); const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+
+  // 등록만 되고 아직 구독자가 없는 채널도 0명으로 표시
+  for (const r of registry) if (!groups.has(r.code)) groups.set(r.code, []);
 
   const channels: ChannelStat[] = [...groups.entries()].map(([ref, list]) => {
     const domains = new Set<string>();
@@ -65,7 +79,15 @@ export function computeChannels(subs: DashboardData["subscribers"], now = new Da
       }
     }
     const quick = convert.filter((m) => m >= 0 && m <= 10).length;
+    const r = reg.get(ref) ?? null;
+    const postedMs = r?.posted_at ? ms(r.posted_at) : NaN;
+    const within = (h: number) => (Number.isFinite(postedMs) ? list.filter((s) => { const t = ms(s.created_at); return t >= postedMs && t <= postedMs + h * 3600_000; }).length : null);
     return {
+      registry: r,
+      conversionRate: r?.audience_size ? list.length / r.audience_size : null,
+      hoursSincePost: Number.isFinite(postedMs) ? (now.getTime() - postedMs) / 3600_000 : null,
+      within24h: within(24),
+      within72h: within(72),
       ref, total: list.length, active: list.filter((s) => s.active).length,
       companyDomains: domains.size, personal,
       last7d: list.filter((s) => ms(s.created_at) >= d7).length,
@@ -76,7 +98,7 @@ export function computeChannels(subs: DashboardData["subscribers"], now = new Da
       productsPerSub: list.length ? products / list.length : 0,
       highRiskShare: totalProducts ? highRisk / totalProducts : 0,
     };
-  }).sort((a, b) => b.total - a.total);
+  }).sort((a, b) => b.total - a.total || (b.registry?.created_at ?? "").localeCompare(a.registry?.created_at ?? ""));
 
   const kst = new Date(now.getTime() + 9 * 3600_000);
   const channelDaily: DashboardData["channelDaily"] = [];
@@ -102,11 +124,12 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const weekStart = monday.toISOString().slice(0, 10);
 
   // 통계·구독자·수집항목·발송기록을 한 번에 병렬 조회
-  const [stats, subsQ, upsQ, delsQ] = await Promise.all([
+  const [stats, subsQ, upsQ, delsQ, registry] = await Promise.all([
     collectAdminStats(now),
     sb.from("subscribers").select("*").order("created_at", { ascending: false }),
     sb.from("updates").select("*").order("created_at", { ascending: false }).limit(60),
     sb.from("deliveries").select("subscriber_id, status, sent_at, error, update_ids").eq("week_start", weekStart).order("sent_at", { ascending: false }),
+    listChannels().catch(() => [] as ChannelRow[]), // channels 테이블이 아직 없으면 빈 목록
   ]);
   if (subsQ.error) throw subsQ.error;
   if (upsQ.error) throw upsQ.error;
@@ -133,7 +156,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     if (d in days) days[d]++;
   }
 
-  const { channels, channelDaily } = computeChannels(subs as DashboardData["subscribers"], now);
+  const { channels, channelDaily } = computeChannels(subs as DashboardData["subscribers"], now, registry);
   return {
     stats,
     channels,

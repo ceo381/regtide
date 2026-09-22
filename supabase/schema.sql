@@ -76,3 +76,16 @@ alter table subscribers add column if not exists ref text;
 alter table subscribers add column if not exists landed_at timestamptz;
 alter table subscribers add column if not exists referrer text;
 create index if not exists subscribers_ref_idx on subscribers(ref);
+
+-- 2026-09-22 채널 등록부 (대시보드에서 채널 태그 생성·관리)
+create table if not exists channels (
+  code text primary key,                     -- 링크의 ?ref= 값. 영문 소문자·숫자·_·- 만
+  name text not null,                        -- 사람이 읽는 이름 (예: 카카오 오픈채팅 '의료기기 RA·QA 정보공유')
+  kind text not null default '기타',         -- 오픈채팅 / 협회·조합 / 교육기관 / 매체 / 링크드인 / 커뮤니티 / 파트너 / 메일전달 / 기타
+  audience_size int,                         -- 게시 대상 인원 (전환율 계산용, 선택)
+  posted_at timestamptz,                     -- 게시·배포 시각 (게시 후 경과 계산용, 선택)
+  notes text,                                -- 메모 (게시 문구, 담당자, 특이사항)
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table channels enable row level security;

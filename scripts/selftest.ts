@@ -24,6 +24,7 @@ import { describeSource } from "@/lib/source-info";
 import { consecutiveZeroRuns } from "@/lib/collect";
 import { checkCollection, checkDisclaimerTemplate } from "@/lib/health";
 import { computeChannels } from "@/lib/admin-data";
+import { upsertChannel, validateChannel, listChannels } from "@/lib/channels";
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://regtide.example";
 process.env.MAIL_FROM = "RegTide <test@regtide.example>";
@@ -340,6 +341,30 @@ async function main() {
     const oc = channels.find((c) => c.ref === "openchat2")!;
     assert.ok(oc && oc.total === 1 && oc.companyDomains === 1 && oc.medianConvertMin! >= 4 && oc.medianConvertMin! <= 6 && oc.quickRate === 1 && oc.highRiskShare === 1);
     assert.ok(channels.some((c) => c.ref === "(직접/미상)"), "ref 없는 구독자는 직접/미상으로 집계");
+  });
+
+  await ok("채널 태그: 입력 검증·저장·통계 결합(전환율·게시 후 24h)", async () => {
+    assert.equal(validateChannel({ code: "Bad Code", name: "x" }).ok, false);
+    assert.equal(validateChannel({ code: "openchat2", name: "" }).ok, false);
+    const posted = new Date(Date.now() - 2 * 3600_000);
+    const v = validateChannel({ code: "openchat2", name: "오픈채팅 인허가방", kind: "오픈채팅", audience_size: "1,000", posted_at: posted.toISOString(), notes: "테스트" });
+    assert.ok(v.ok);
+    if (v.ok) { assert.equal(v.value.audience_size, 1000); await upsertChannel(v.value); }
+    const v2 = validateChannel({ code: "openchat2", name: "오픈채팅 인허가방(수정)", kind: "오픈채팅", audience_size: "1000" });
+    if (v2.ok) await upsertChannel(v2.value);
+    const reg = await listChannels();
+    assert.equal(reg.filter((r) => r.code === "openchat2").length, 1, "같은 코드는 덮어쓰기(중복 없음)");
+    const { channels } = computeChannels(db.tables.subscribers as never, new Date(), reg.map((r) => ({ ...r, posted_at: posted.toISOString() })));
+    const oc = channels.find((c) => c.ref === "openchat2")!;
+    assert.equal(oc.registry?.name, "오픈채팅 인허가방(수정)");
+    assert.equal(oc.conversionRate, 1 / 1000);
+    assert.equal(oc.within24h, 1, "게시 후 24시간 내 구독 1명");
+    assert.ok(oc.hoursSincePost! > 1.9 && oc.hoursSincePost! < 2.1);
+    // 등록만 되고 구독자 없는 채널도 0명으로 표시
+    const v3 = validateChannel({ code: "kmdia", name: "협회 공지", kind: "협회·조합" });
+    if (v3.ok) await upsertChannel(v3.value);
+    const { channels: ch2 } = computeChannels(db.tables.subscribers as never, new Date(), await listChannels());
+    assert.ok(ch2.some((c) => c.ref === "kmdia" && c.total === 0));
   });
 
   console.log("\n[6] 구독 API 입력 검증");
