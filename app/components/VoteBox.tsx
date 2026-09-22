@@ -64,7 +64,7 @@ export default function VoteBox({ title, sub, auth, mine }: { title: string; sub
           {!locked && (
             <>
               <label className="vote-other">
-                <span>목록에 없는 기능이 필요하다면 (선택) — 이름·연락처 등 개인정보는 적지 마세요</span>
+                <span>목록에 없는 기능이 필요하다면 적어 주세요 (선택). 이름·연락처 등 개인정보는 적지 마세요.</span>
                 <textarea value={other} onChange={(e) => setOther(e.target.value)} maxLength={1000} rows={2} />
               </label>
               <div className="row" style={{ display: "flex", alignItems: "center", gap: 10 }}>

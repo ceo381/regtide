@@ -48,7 +48,7 @@ export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; no
     .map((j) => `<p style="margin:8px 0 0;color:#475467;font-size:13px;line-height:1.6"><strong style="color:#344054">${esc(JURISDICTION_LABEL[j])}</strong><br>${byJ[j]!.map((l) => `<span style="display:inline-block;background:#f2f4f7;color:#344054;border-radius:4px;padding:2px 8px;font-size:12px;margin:4px 4px 0 0">${esc(l)}</span>`).join("")}</p>`)
     .join("");
 
-  const title = opts.isNew ? "구독이 완료되었습니다" : "구독 설정이 변경되었습니다";
+  const title = opts.isNew ? "구독이 완료되었습니다." : "구독 설정이 변경되었습니다.";
   const intro = opts.isNew
     ? "RegTide 를 구독해 주셔서 감사합니다. 아래 내용으로 규제 업데이트 모니터링을 시작합니다."
     : "구독 설정이 아래 내용으로 변경되었습니다. 다음 리포트부터 반영됩니다.";

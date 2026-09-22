@@ -149,7 +149,7 @@ export default function SubscribeForm() {
                 </label>
                 <label>
                   <span>품목명 <em>(선택)</em></span>
-                  <input type="text" value={p.name} maxLength={100} placeholder="예) 개인용 저주파자극기 — 비워도 됩니다" onChange={(e) => update(p.uid, { name: e.target.value })} aria-label="품목명(선택)" />
+                  <input type="text" value={p.name} maxLength={100} placeholder="예) 개인용 저주파자극기 — 비워도 됩니다." onChange={(e) => update(p.uid, { name: e.target.value })} aria-label="품목명(선택)" />
                 </label>
               </div>
               {products.length > 1 && (
@@ -245,12 +245,12 @@ export default function SubscribeForm() {
             <strong>개인정보 수집·이용 동의 (필수)</strong>
             <ul>
               <li>수집 항목(필수): 이메일 주소, 품목 등급·유형, 선택한 규격·인증, 동의 일시 및 IP</li>
-              <li>수집 항목(선택): 품목명 — 입력하지 않아도 서비스를 이용할 수 있으며, 입력 시 리포트에 표시됩니다</li>
+              <li>수집 항목(선택): 품목명 — 입력하지 않아도 서비스를 이용할 수 있으며, 입력 시 리포트에 표시됩니다.</li>
               <li>자동 수집: 서비스 안내 링크(?ref=)로 접속한 경우 유입 경로 코드·최초 접속 시각, 접속 통계(방문 시각·유입 경로 코드·이전 페이지 호스트 — IP·쿠키·방문자 식별값 없음) (채널별 효과 측정 통계 목적)</li>
               <li>수집 목적: 구독 신청 확인 메일 발송(1회), 규제 업데이트 주간 리포트 이메일 발송(리포트 안에 서비스 신규 기능 안내 포함), 구독해지 처리</li>
               <li>보유 기간: 구독해지(구독 해지) 시까지. 해지 즉시 삭제됩니다.</li>
               <li>제3자 제공: 없음. 처리 위탁: 데이터베이스 호스팅(Supabase), 이메일 발송 대행(Resend), 웹 호스팅(Vercel) — 국외 사업자이며 자세한 내용은 처리방침 4·4-1항</li>
-              <li>구독 정보(이메일·품목·규격)는 운영자가 서비스 운영 현황 확인 목적으로 내부에서 열람합니다</li>
+              <li>구독 정보(이메일·품목·규격)는 운영자가 서비스 운영 현황 확인 목적으로 내부에서 열람합니다.</li>
               <li>동의를 거부할 수 있으며, 거부 시 서비스 이용이 불가합니다.</li>
             </ul>
             <div style={{ marginTop: 6 }}>
@@ -259,7 +259,7 @@ export default function SubscribeForm() {
           </div>
           <label className="consent">
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-            <span>위 개인정보 수집·이용에 동의합니다. (선택 항목인 품목명은 입력한 경우에만 수집됩니다)</span>
+            <span>위 개인정보 수집·이용에 동의합니다. (선택 항목인 품목명은 입력한 경우에만 수집됩니다.)</span>
           </label>
 
           <button type="submit" className="btn btn-primary btn-lg" disabled={busy}>

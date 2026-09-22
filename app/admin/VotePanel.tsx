@@ -62,7 +62,7 @@ export default function VotePanel({ summary, suggestions, available }: { summary
                 ))}
               </tbody>
             </table>
-            <p className="sub" style={{ marginTop: 8 }}>"출시로 표시"하면 랜딩의 "투표로 뽑혀 열린 기능"에 오르고, 이후 3주 동안 리포트 상단에 "여러분이 뽑은 기능이 열렸습니다"로 실립니다. 다음 후보로 넘어가려면 라운드를 마감하고 새 라운드를 여세요.</p>
+            <p className="sub" style={{ marginTop: 8 }}>"출시로 표시"하면 랜딩의 "투표로 뽑혀 열린 기능"에 오르고, 이후 3주 동안 리포트 상단에 "여러분이 뽑은 기능이 열렸습니다."로 실립니다. 다음 후보로 넘어가려면 라운드를 마감하고 새 라운드를 여세요.</p>
           </div>
         )}
 
@@ -83,7 +83,7 @@ export default function VotePanel({ summary, suggestions, available }: { summary
           <form method="post" action="/api/admin/run" className="channel-form" style={{ marginTop: 10 }}>
             <Hidden action="vote_create" />
             <label>라운드 제목 <span className="req">*</span>
-              <input name="title" required maxLength={120} placeholder="예) 2차 — 다음 기능은 RA·QA 실무자가 고릅니다" />
+              <input name="title" required maxLength={120} placeholder="예) 2차 — 다음 기능은 RA·QA 실무자가 고릅니다." />
             </label>
             <label>후보 (한 줄에 하나, "제목 | 설명") <span className="req">*</span>
               <textarea name="options" rows={8} required placeholder={"규격별 개정 이력 타임라인 | 규격 하나를 골라 개정 흐름을 시간순으로\n입법예고 의견제출 기한 알림 | 마감이 다가오는 입법예고를 따로 알림"} />

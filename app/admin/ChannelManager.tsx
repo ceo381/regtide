@@ -241,7 +241,7 @@ export default function ChannelManager({ site, channels, daily, visitsByDay, vis
         <TimeSeriesChart title="누적 구독자" sub="구간 시작 전 누적 + 일별 신규" days={days} series={[{ key: "cum", label: "누적 구독자", color: CHART_COLORS[3], values: cumulative }]} height={180} />
         <TimeSeriesChart
           title="유입 · 신규 구독 (일별)"
-          sub={visitsAvailable ? "유입 = 랜딩 방문(브라우저 세션당 1회) · 신규 구독 = 전 채널 합계 · 구독해지 = 본인 해지 + 운영자 삭제" : "유입은 visits 테이블 마이그레이션 후 집계됩니다"}
+          sub={visitsAvailable ? "유입 = 랜딩 방문(브라우저 세션당 1회) · 신규 구독 = 전 채널 합계 · 구독해지 = 본인 해지 + 운영자 삭제" : "유입은 visits 테이블 마이그레이션 후 집계됩니다."}
           days={days}
           series={[
             ...(visitsAvailable ? [{ key: "visits", label: "유입", color: CHART_COLORS[0], values: visits }] : []),

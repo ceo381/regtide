@@ -33,7 +33,7 @@ export default async function VotePage({ searchParams }: { searchParams: Promise
 
       {!verified || !active ? (
         <section className="card">
-          <h2>구독자만 투표할 수 있습니다</h2>
+          <h2>구독자만 투표할 수 있습니다.</h2>
           <p className="sub">
             이 페이지는 구독 확인 메일과 매주 월요일 리포트에 담긴 개인 링크로만 열립니다. 링크가 만료되었거나 구독이 해지된 경우에도 이 화면이 보입니다.
             아직 구독 전이라면 30초면 됩니다. 구독하면 확인 메일에서 바로 투표할 수 있습니다.
@@ -42,7 +42,7 @@ export default async function VotePage({ searchParams }: { searchParams: Promise
         </section>
       ) : !summary.open ? (
         <section className="card">
-          <h2>지금은 진행 중인 투표가 없습니다</h2>
+          <h2>지금은 진행 중인 투표가 없습니다.</h2>
           <p className="sub">다음 라운드가 열리면 주간 리포트에서 안내드립니다.</p>
         </section>
       ) : (

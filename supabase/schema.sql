@@ -161,7 +161,7 @@ alter table suggestions enable row level security;
 
 -- 1차 라운드 시드 (이미 라운드가 있으면 건너뜀)
 insert into vote_rounds (id, title)
-select '00000000-0000-0000-0000-000000000001', '1차 — 다음 기능은 RA·QA 실무자가 고릅니다'
+select '00000000-0000-0000-0000-000000000001', '1차 — 다음 기능은 RA·QA 실무자가 고릅니다.'
 where not exists (select 1 from vote_rounds);
 insert into vote_options (round_id, label, description, sort)
 select '00000000-0000-0000-0000-000000000001', v.label, v.description, v.sort
