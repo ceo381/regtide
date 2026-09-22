@@ -4,6 +4,7 @@ import SubscribeForm from "./components/SubscribeForm";
 import UnsubNotice from "./components/UnsubNotice";
 import { COVERAGE } from "@/lib/source-info";
 import Faq, { FAQ } from "./components/Faq";
+import Roadmap from "./components/Roadmap";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://regtide-pi.vercel.app";
 
@@ -53,6 +54,10 @@ export default function Home() {
           회원가입 없이 품목과 적용 규격·인증만 선택하세요. 식약처 고시·입법예고, 미국 Federal Register, EU MDR/MDCG,
           ISO/IEC 규격 동향을 자동 수집해 원문 발췌와 링크를 이메일로 보내드립니다. 무료입니다.
         </p>
+        <p className="hero-note">
+          매주 월요일, 인허가·품질 담당자의 일이 하나씩 줄어듭니다. 지금 필요한 기능이 없더라도 이메일만 등록해 두시면 새 기능이 열릴 때 주간 리포트로 가장 먼저 안내받습니다.{" "}
+          <a href="#vote">다음 기능 투표하기</a>
+        </p>
         <div className="coverage" aria-label="지원 국가">
           {COVERAGE.map((c) => (
             <div key={c.code} className="coverage-item">
@@ -77,6 +82,8 @@ export default function Home() {
       </Suspense>
 
       <SubscribeForm />
+
+      <Roadmap />
 
       <Faq />
 

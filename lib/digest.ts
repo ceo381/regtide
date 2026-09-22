@@ -4,7 +4,8 @@ import { CATALOG, CATALOG_BY_ID, JURISDICTION_LABEL, productLabel, type Jurisdic
 import { mailFrom, selectAll, supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { COVERAGE, describeSource, sourcesUsed } from "@/lib/source-info";
 import { COLLECT_LOOKBACK_DAYS } from "@/lib/collect";
-import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, forwardedNoticeHtml, shareBlockHtml } from "@/lib/email-common";
+import { loadVoteSummary, type VoteSummary } from "@/lib/votes";
+import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, forwardedNoticeHtml, roadmapBlockHtml, shareBlockHtml } from "@/lib/email-common";
 
 const IMPACT_LABEL: Record<string, { text: string; color: string }> = {
   high: { text: "즉시 조치", color: "#b42318" },
@@ -72,7 +73,7 @@ export function relevantUpdates(sub: SubscriberRow, updates: UpdateRow[]): Updat
     });
 }
 
-export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], period: { start: Date; end: Date; generatedAt?: Date }) {
+export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], period: { start: Date; end: Date; generatedAt?: Date; vote?: VoteSummary }) {
   const generatedAt = period.generatedAt ?? new Date();
   // 수집 기간 표기: 지난 발송(7일 전) 이후 매일 수집. 이전 메일에 안내한 항목은 제외됨
   const collectSince = new Date(generatedAt.getTime() - 7 * 86400_000);
@@ -127,6 +128,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       <p style="margin:0 0 16px;color:#667085;font-size:12px;line-height:1.6">모니터링 대상: ${COVERAGE.map((c) => `<strong style="color:#475467">${esc(c.country)}</strong>(${esc(c.agencies)})`).join(" · ")}</p>
       ${productLine}
       ${updates.length ? sections : empty}
+      ${roadmapBlockHtml(generatedAt, period.vote)}
       ${shareBlockHtml()}
       <hr style="border:0;border-top:1px solid #eaecf0;margin:32px 0 16px">
       ${updates.length ? `<p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0 0 12px"><strong style="color:#667085">이번 메일의 출처</strong><br>
@@ -238,6 +240,7 @@ export async function sendWeeklyDigests(
   }
 
   const from = mailFrom();
+  const vote = await loadVoteSummary(); // 새 기능 소식 블록용 (실패해도 빈 요약)
   const result: SendResult = { sent: 0, skipped: 0, failed: [], recordErrors: [] };
   // 멱등 키: 주(week_start) + 구독자 → 같은 주에 같은 사람에게는 재시도해도 한 번만 발송. 테스트 발송은 키 없음(매번 받아야 함)
   const idemKey = (subId: string) => (testOnly ? undefined : `regtide:${weekStart}:${subId}`);
@@ -293,7 +296,7 @@ export async function sendWeeklyDigests(
         from,
         to: sub.email,
         subject: `${testOnly ? "[테스트] " : ""}[RegTide] 이번 주 의료기기 규제 업데이트 ${mine.length}건 (${weekStart} 주)`,
-        html: renderDigestHtml(sub, mine, { start: periodStart, end: periodEnd, generatedAt: now }),
+        html: renderDigestHtml(sub, mine, { start: periodStart, end: periodEnd, generatedAt: now, vote }),
       },
     });
   }

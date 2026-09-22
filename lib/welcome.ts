@@ -1,8 +1,9 @@
 import { CATALOG_BY_ID, JURISDICTION_LABEL, productLabel, type Jurisdiction } from "@/lib/catalog";
 import { COVERAGE } from "@/lib/source-info";
 import { CANDIDATE_DAYS, resendMailer, type Mailer } from "@/lib/digest";
-import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, forwardUrl, siteUrl } from "@/lib/email-common";
+import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, forwardUrl, roadmapBlockHtml, siteUrl } from "@/lib/email-common";
 import { mailFrom, type SubscriberRow } from "@/lib/supabase";
+import { loadVoteSummary, type VoteSummary } from "@/lib/votes";
 
 /**
  * 구독 확인 메일 — 구독 신청 직후 신청한 주소로 1회 발송.
@@ -29,7 +30,7 @@ function fmtKst(d: Date) {
   return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }) + " KST";
 }
 
-export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; now?: Date }) {
+export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; now?: Date; vote?: VoteSummary }) {
   const now = opts.now ?? new Date();
   const site = siteUrl();
   const firstSend = nextMondaySend(now);
@@ -78,7 +79,9 @@ export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; no
       <p style="margin:0;color:#475467;font-size:13px;line-height:1.7">${COVERAGE.map((c) => `<strong style="color:#344054">${esc(c.country)}</strong> — ${esc(c.agencies)}`).join("<br>")}</p>
       <p style="margin:12px 0 0;color:#667085;font-size:13px;line-height:1.7">품목이나 규격을 바꾸려면 <a href="${esc(site)}" style="color:#175cd3">구독 페이지</a>에서 같은 이메일로 다시 신청하시면 됩니다. 기존 설정이 새 내용으로 바뀝니다.<br>같은 팀 동료에게도 필요하다면 이 링크를 전달해 주세요: <a href="${esc(forwardUrl())}" style="color:#175cd3">${esc(forwardUrl())}</a></p>
 
-      <p style="margin:16px 0 0;color:#98a2b3;font-size:12px;line-height:1.6">이 메일은 구독 신청 확인을 위해 신청하신 주소로 1회 발송됩니다. 이후에는 매주 월요일 리포트 외의 메일을 보내지 않습니다.<br>본인이 신청하지 않으셨다면 아래 구독해지 링크를 눌러 확인 화면에서 해지해 주세요. 이메일 주소가 즉시 삭제되며 더 이상 메일이 가지 않습니다.</p>
+      ${roadmapBlockHtml(now, opts.vote)}
+
+      <p style="margin:16px 0 0;color:#98a2b3;font-size:12px;line-height:1.6">이 메일은 구독 신청 확인을 위해 신청하신 주소로 1회 발송됩니다. 이후에는 매주 월요일 리포트 외의 메일을 보내지 않으며, 새 기능 소식도 리포트 안에서만 안내드립니다.<br>본인이 신청하지 않으셨다면 아래 구독해지 링크를 눌러 확인 화면에서 해지해 주세요. 이메일 주소가 즉시 삭제되며 더 이상 메일이 가지 않습니다.</p>
 
       <hr style="border:0;border-top:1px solid #eaecf0;margin:24px 0 16px">
       ${disclaimerFooterHtml(sub.unsubscribe_token, "RegTide 가 보내드리는 리포트는")}
@@ -88,6 +91,7 @@ export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; no
 
 export async function sendWelcomeEmail(sub: SubscriberRow, opts: { isNew: boolean; now?: Date }) {
   const mailer = mailerForTest ?? resendMailer();
+  const vote = await loadVoteSummary();
   const subject = opts.isNew ? "[RegTide] 구독이 완료되었습니다" : "[RegTide] 구독 설정이 변경되었습니다";
-  return mailer.send({ from: mailFrom(), to: sub.email, subject, html: renderWelcomeHtml(sub, opts) });
+  return mailer.send({ from: mailFrom(), to: sub.email, subject, html: renderWelcomeHtml(sub, { ...opts, vote }) });
 }

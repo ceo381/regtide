@@ -44,6 +44,8 @@ export interface AdminStats {
   /** 최근 24시간 / 7일 구독해지 (unsubscribes 테이블). 테이블 없으면 null */
   unsubscribes24h: number | null;
   unsubscribes7d: number | null;
+  votes24h: number | null;
+  suggestions24h: number | null;
   health?: HealthReport;
 }
 
@@ -67,7 +69,7 @@ export async function collectAdminStats(now = new Date(), hours = 24): Promise<A
 
   // 모든 조회를 병렬로 (Vercel ↔ Supabase 왕복을 1회로 줄임)
   const weekAgo = new Date(now.getTime() - 7 * 86400_000).toISOString();
-  const [totalActive, newSubsQ, upsQ, delsQ, allSubsQ, lastCollect, unsub24, unsub7] = await Promise.all([
+  const [totalActive, newSubsQ, upsQ, delsQ, allSubsQ, lastCollect, unsub24, unsub7, votes24, sugg24] = await Promise.all([
     countActiveSubscribers(),
     sb.from("subscribers").select("*").gte("created_at", since).order("created_at", { ascending: false }),
     sb.from("updates").select("jurisdiction,catalog_ids").gte("created_at", since),
@@ -76,6 +78,8 @@ export async function collectAdminStats(now = new Date(), hours = 24): Promise<A
     readLastCollect().catch(() => null),
     sb.from("unsubscribes").select("id", { count: "exact", head: true }).gte("unsubscribed_at", since).then((r) => (r.error ? null : r.count ?? 0), () => null),
     sb.from("unsubscribes").select("id", { count: "exact", head: true }).gte("unsubscribed_at", weekAgo).then((r) => (r.error ? null : r.count ?? 0), () => null),
+    sb.from("votes").select("id", { count: "exact", head: true }).gte("created_at", since).then((r) => (r.error ? null : r.count ?? 0), () => null),
+    sb.from("suggestions").select("id", { count: "exact", head: true }).gte("created_at", since).then((r) => (r.error ? null : r.count ?? 0), () => null),
   ]);
   if (newSubsQ.error) throw newSubsQ.error;
   if (upsQ.error) throw upsQ.error;
@@ -111,7 +115,7 @@ export async function collectAdminStats(now = new Date(), hours = 24): Promise<A
     .map(([id, count]) => ({ id, label: CATALOG_BY_ID[id]?.label ?? id, count }));
 
   const health = await computeHealth(lastCollect, now).catch(() => undefined);
-  return { now, totalActive, newSubscribers: (newSubsQ.data ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect, multiSeatDomains, companyDomains, personalMailCount, unsubscribes24h: unsub24, unsubscribes7d: unsub7, health };
+  return { now, totalActive, newSubscribers: (newSubsQ.data ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect, multiSeatDomains, companyDomains, personalMailCount, unsubscribes24h: unsub24, unsubscribes7d: unsub7, votes24h: votes24, suggestions24h: sugg24, health };
 }
 
 export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: string }) {
@@ -143,6 +147,7 @@ export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: str
     <table style="border-collapse:collapse;font-size:15px;margin-bottom:16px">
       ${row("활성 구독자", `${s.totalActive}명`)}
       ${row("최근 24시간 신규 구독", `${s.newSubscribers.length}명`)}
+      ${row("기능 투표·건의 (24시간)", s.votes24h == null ? "집계 전" : `투표 ${s.votes24h}표 · 건의 ${s.suggestions24h ?? 0}건 — 대시보드 투표·건의 탭`)}
       ${row("구독해지", s.unsubscribes24h == null ? "집계 전 (unsubscribes 테이블 필요)" : `24시간 ${s.unsubscribes24h}명 · 7일 ${s.unsubscribes7d ?? 0}명`)}
       ${row("최근 24시간 수집", updLine)}
       ${row("이번 주 발송", delLine)}

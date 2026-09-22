@@ -325,6 +325,11 @@ async function main() {
       assert.ok(!/\bAI\b|인공지능|자동 요약|생성형/.test(footer), "면책 문구에 AI 언급 금지");
       assert.ok(!m.html.includes("수신거부"), "'수신거부' 대신 '구독해지' 사용");
       assert.ok(m.html.includes("/?ref=fwd"), "전달 유입 링크(ref=fwd) 포함");
+      assert.ok(m.html.includes("인허가·품질 담당자의 일이 하나씩") || m.html.includes("여러분이 뽑은 기능이 열렸습니다"), "새 기능 소식 블록 포함");
+      // 규격 이름(EU AI Act, AI 의료기기 등)은 규제 대상이라 메일 본문에 나올 수 있음 — 금지 대상은 면책·안내 문구(위에서 검사)와 새 기능 블록
+      const rmStart = Math.max(m.html.indexOf("인허가·품질 담당자의 일이 하나씩"), m.html.indexOf("여러분이 뽑은 기능이 열렸습니다"));
+      const rm = m.html.slice(rmStart, m.html.indexOf("이 리포트가 도움이 되셨다면"));
+      assert.ok(!/\bAI\b|인공지능/.test(rm), "새 기능 블록에 AI 언급 없음");
       assert.ok(m.html.includes("원 수신자 전용"), "전달받은 사람에게 구독해지 링크 주의 안내");
     }
   });
@@ -548,6 +553,54 @@ async function main() {
     assert.equal(scr.visits, 1);
     const { channels: noVisits } = computeChannels(subs as never, new Date(), [], null);
     assert.equal(noVisits[0].visits, null, "visits 테이블이 없으면 null (집계 전 표시)");
+  });
+  await ok("기능 투표·건의: 익명 저장(이메일·IP 없음), 열린 라운드의 후보만 인정, 라운드 마감·출시 표시가 요약과 메일 블록에 반영된다", async () => {
+    const { castVote, loadVoteSummary, closeRound, markReleased, createRound, recentlyReleased, listSuggestions } = await import("@/lib/votes");
+    const { roadmapBlockHtml } = await import("@/lib/email-common");
+    // 라운드 생성 (운영자 작업)
+    const c = await createRound("1차", ["아카이브 | 지난 변경 검색", "조문 비교 | 신구 대비", "x"]);
+    assert.ok(c.ok, c.error);
+    let s = await loadVoteSummary();
+    assert.ok(s.open && s.open.options.length === 3 && s.open.total === 0);
+    const [o1, o2] = s.open!.options;
+    // 투표 (API 경로)
+    const { POST } = await import("@/app/api/vote/route");
+    const call = async (body: unknown, headers: Record<string, string> = {}) => {
+      const req = new Request("http://localhost/api/vote", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "x-forwarded-for": "10.0.0.7", ...headers } });
+      const res = await POST(req as never);
+      return { status: res.status, json: await res.json() };
+    };
+    const r1 = await call({ roundId: s.open!.id, optionIds: [o1.id, o2.id, "not-an-option"], other: "  심사원 지적사항 사례 모음  ", ref: "OpenChat1" });
+    assert.equal(r1.status, 200); assert.equal(r1.json.voted, 2); assert.equal(r1.json.suggested, true);
+    const cross = await call({ roundId: s.open!.id, optionIds: [o1.id] }, { "sec-fetch-site": "cross-site" });
+    assert.equal(cross.status, 403, "다른 사이트에서 온 요청 거부");
+    const empty = await call({ roundId: s.open!.id, optionIds: [], other: "" });
+    assert.equal(empty.status, 400);
+    for (const v of db.tables.votes) assert.ok(!("email" in v) && !("ip" in v), "투표에 식별 정보 없음");
+    const sg = await listSuggestions();
+    assert.equal(sg[0].message, "심사원 지적사항 사례 모음"); assert.equal(sg[0].ref, "openchat1");
+    s = await loadVoteSummary();
+    assert.equal(s.open!.total, 2);
+    assert.equal(s.open!.options.find((o) => o.id === o1.id)!.count, 1);
+    // 마감 전 메일 블록: 투표 링크 포함, 출시 없음
+    let html = roadmapBlockHtml(new Date(), s);
+    assert.ok(html.includes("다음 기능 투표하기") && !html.includes("여러분이 뽑은 기능이 열렸습니다"));
+    // 닫힌 라운드에는 투표 불가
+    assert.ok((await closeRound(s.open!.id, "메모")).ok);
+    const late = await castVote({ roundId: o1.round_id, optionIds: [o1.id] });
+    assert.ok(!late.ok);
+    // 출시 표시 → 요약·메일 블록에 반영
+    assert.ok((await markReleased(o1.id, true)).ok);
+    s = await loadVoteSummary();
+    assert.equal(s.open, null);
+    assert.equal(s.released[0].label, "아카이브");
+    assert.equal(recentlyReleased(s).length, 1);
+    html = roadmapBlockHtml(new Date(), s);
+    assert.ok(html.includes("여러분이 뽑은 기능이 열렸습니다") && html.includes("아카이브") && !html.includes("다음 기능 투표하기"));
+    assert.ok(!/\bAI\b|인공지능/.test(html));
+    // 두 번째 라운드는 첫 라운드가 닫혀야 열림 (이미 닫힘)
+    assert.ok((await createRound("2차", ["a | 1", "b | 2"])).ok);
+    assert.ok((await loadVoteSummary()).open?.title === "2차");
   });
   await ok("대시보드 표 정렬: 숫자·문자·날짜 정렬, 빈 값은 항상 맨 뒤, 동률은 원래 순서", async () => {
     const { sortRows } = await import("@/app/admin/useSort");

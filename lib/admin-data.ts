@@ -2,6 +2,7 @@ import { selectAll, supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/
 import { collectAdminStats, type AdminStats } from "@/lib/admin-report";
 import { computeHealth, type HealthReport } from "@/lib/health";
 import { listChannels, type ChannelRow } from "@/lib/channels";
+import { listSuggestions, loadVoteSummary, type SuggestionRow, type VoteSummary } from "@/lib/votes";
 
 /** 대시보드용 데이터 묶음 (서버 컴포넌트에서 1회 호출) */
 export interface DashboardData {
@@ -18,6 +19,9 @@ export interface DashboardData {
   visitsByDay: { day: string; count: number }[]; // 최근 14일, KST
   churn: { available: boolean; total: number; last24h: number; last7d: number; last14d: number; rate7d: number | null; recent: UnsubscribeView[] };
   churnByDay: { day: string; count: number }[];
+  vote: VoteSummary;
+  suggestions: SuggestionRow[];
+  voteAvailable: boolean;
 }
 
 export interface UnsubscribeView { unsubscribed_at: string; reason: string; ref: string | null; tenure_days: number | null; catalog_count: number | null; categories: string[]; deliveries_received: number | null; mail_type: string | null }
@@ -160,7 +164,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   // 통계·구독자·수집항목·발송기록을 한 번에 병렬 조회
   const since14 = new Date(now.getTime() - 14 * 86400_000).toISOString();
-  const [stats, subsQ, upsQ, delsQ, registry, visitsQ, churnQ] = await Promise.all([
+  const [stats, subsQ, upsQ, delsQ, registry, visitsQ, churnQ, vote, suggestions, voteAvailable] = await Promise.all([
     collectAdminStats(now),
     selectAll<DashboardData["subscribers"][number]>(() => sb.from("subscribers").select("*").order("created_at", { ascending: false }).order("id", { ascending: true })).then((data) => ({ data, error: null as null })),
     sb.from("updates").select("*").order("created_at", { ascending: false }).limit(60),
@@ -176,6 +180,9 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       sb.from("unsubscribes").select("id", { count: "exact", head: true }),
       selectAll<UnsubscribeView & { ref: string | null }>(() => sb.from("unsubscribes").select("unsubscribed_at, reason, ref, tenure_days, catalog_count, categories, deliveries_received, mail_type").order("unsubscribed_at", { ascending: false }).order("id", { ascending: true })),
     ]).then(([c, rows]) => (c.error ? null : { total: c.count ?? rows.length, rows })).catch(() => null),
+    loadVoteSummary(),
+    listSuggestions(),
+    sb.from("vote_rounds").select("id", { count: "exact", head: true }).then((r) => !r.error, () => false),
   ]);
   if (subsQ.error) throw subsQ.error;
   if (upsQ.error) throw upsQ.error;
@@ -220,6 +227,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     visitsByDay: Object.entries(vDays).map(([day, count]) => ({ day, count })),
     churn: { available: !!churnQ, total: churnQ?.total ?? 0, last24h: uin(24), last7d: uin(24 * 7), last14d: uin(24 * 14), rate7d: activeNow + uin(24 * 7) > 0 ? uin(24 * 7) / (activeNow + uin(24 * 7)) : null, recent: (unsubRows ?? []).slice(0, 50) },
     churnByDay: Object.entries(cDays).map(([day, count]) => ({ day, count })),
+    vote, suggestions, voteAvailable,
     stats,
     channels,
     channelDaily,

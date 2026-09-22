@@ -117,3 +117,63 @@ create table if not exists unsubscribes (
 );
 create index if not exists unsubscribes_at_idx on unsubscribes(unsubscribed_at desc);
 alter table unsubscribes enable row level security;
+
+-- 2026-09-22: 기능 투표·건의 — 익명 (이메일·IP 미저장). 라운드 단위로 열고 닫으며, 출시된 후보는 released_at 으로 표시
+create table if not exists vote_rounds (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,                       -- 예: 1차 — 다음 기능은 RA·QA 실무자가 고릅니다
+  status text not null default 'open',       -- open / closed
+  show_results boolean not null default false, -- 득표 공개 여부 (기본 비공개)
+  release_note text,                         -- 마감 후 "이번에 열린 기능" 안내 문구 (선택)
+  opened_at timestamptz not null default now(),
+  closed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create table if not exists vote_options (
+  id uuid primary key default gen_random_uuid(),
+  round_id uuid not null references vote_rounds(id) on delete cascade,
+  label text not null,
+  description text,
+  sort int not null default 0,
+  released_at timestamptz,                   -- 출시되면 날짜 기입 → 랜딩 "출시된 기능" 이력, 메일 "여러분이 뽑은 기능이 열렸습니다"
+  created_at timestamptz not null default now()
+);
+create table if not exists votes (
+  id uuid primary key default gen_random_uuid(),
+  round_id uuid not null references vote_rounds(id) on delete cascade,
+  option_id uuid not null references vote_options(id) on delete cascade,
+  ref text,                                  -- 유입 채널 코드 (통계용)
+  created_at timestamptz not null default now()
+);
+create table if not exists suggestions (
+  id uuid primary key default gen_random_uuid(),
+  round_id uuid references vote_rounds(id) on delete set null,
+  message text not null,                     -- 자유 입력 (개인정보를 적지 않도록 안내)
+  ref text,
+  created_at timestamptz not null default now()
+);
+create index if not exists votes_round_idx on votes(round_id);
+create index if not exists suggestions_created_idx on suggestions(created_at desc);
+alter table vote_rounds enable row level security;
+alter table vote_options enable row level security;
+alter table votes enable row level security;
+alter table suggestions enable row level security;
+
+-- 1차 라운드 시드 (이미 라운드가 있으면 건너뜀)
+insert into vote_rounds (id, title)
+select '00000000-0000-0000-0000-000000000001', '1차 — 다음 기능은 RA·QA 실무자가 고릅니다'
+where not exists (select 1 from vote_rounds);
+insert into vote_options (round_id, label, description, sort)
+select '00000000-0000-0000-0000-000000000001', v.label, v.description, v.sort
+from (values
+  ('규제 변경 아카이브·검색', '지금까지 수집된 변경 사항을 기관·규격·기간으로 찾아보기', 1),
+  ('개정 전후 조문 비교', '입법예고·개정 고시의 바뀐 조항을 신구 대비로 한눈에', 2),
+  ('규격별 개정 이력 타임라인', '규격 하나를 골라 개정·입법예고 흐름을 시간순으로', 3),
+  ('내 문서 영향 알림', '우리 회사 문서 목록(파일 아님)을 규격과 연결해 두면, 개정 시 검토 대상 문서를 이름으로 안내', 4),
+  ('입법예고 의견제출 기한 알림', '의견 제출 마감이 다가오는 입법예고를 따로 알림', 5),
+  ('FDA·EU 원문 국문 요약', '영어 원문 항목에 한국어 요약을 함께 표기', 6),
+  ('팀 단위 구독', '한 번의 설정으로 같은 팀 동료 여러 명이 함께 수신', 7),
+  ('이메일 외 알림 채널', '카카오톡·슬랙 등 메신저로도 수신', 8)
+) as v(label, description, sort)
+where exists (select 1 from vote_rounds where id = '00000000-0000-0000-0000-000000000001')
+  and not exists (select 1 from vote_options where round_id = '00000000-0000-0000-0000-000000000001');

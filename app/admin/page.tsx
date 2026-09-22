@@ -10,6 +10,7 @@ import ChannelManager from "./ChannelManager";
 import SubscriberTable from "./SubscriberTable";
 import UpdatesTable from "./UpdatesTable";
 import DeliveriesTable from "./DeliveriesTable";
+import VotePanel from "./VotePanel";
 
 export const metadata = { title: "관리자 대시보드", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -284,6 +285,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           { id: "channels", label: `채널 (${d.channels.length})`, content: channels },
           { id: "updates", label: "수집 항목", content: updates },
           { id: "deliveries", label: "발송 기록", content: deliveries },
+          { id: "votes", label: `투표·건의${d.voteAvailable ? ` (${d.vote.open?.total ?? 0}표 · ${d.suggestions.length}건)` : ""}`, content: <VotePanel summary={d.vote} suggestions={d.suggestions} available={d.voteAvailable} /> },
           { id: "ops", label: "운영 작업", content: ops },
         ]}
       />

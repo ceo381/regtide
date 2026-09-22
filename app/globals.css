@@ -268,3 +268,29 @@ input, select, textarea, button { font-family: inherit; }
 .ts-legend .sw { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
 
 .kpi.kpi-warn strong { color: #b54708; }
+
+/* 로드맵 티저 + 투표 (랜딩) */
+.hero-note { margin: 12px 0 0 !important; padding: 10px 14px; background: #eef4ff; border-radius: 8px; color: #1e3a8a !important; font-size: 14px !important; max-width: 640px; }
+.hero-note a { color: #1d4ed8; font-weight: 600; }
+.roadmap .released { margin: 12px 0 4px; padding: 12px 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; }
+.roadmap .released h3 { margin: 0 0 6px; font-size: 14px; color: #166534; }
+.roadmap .released ul { margin: 0; padding-left: 18px; font-size: 13.5px; color: #14532d; }
+.roadmap .released li span { color: #4d7c5c; font-size: 12.5px; margin-left: 6px; }
+.vote { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.vote h3 { font-size: 17px; margin: 0 0 4px; }
+.vote-options { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.vote-options label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fcfcfd; cursor: pointer; }
+.vote-options label:hover { border-color: #93c5fd; }
+.vote-options input { margin-top: 3px; flex: none; }
+.vote-options input:checked + .vo-text strong { color: #1d4ed8; }
+.vo-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.vo-text strong { font-size: 14px; }
+.vo-text span { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.vo-count { flex: none; font-size: 12px; color: #1d4ed8; font-variant-numeric: tabular-nums; }
+.vote-other { display: block; margin-top: 12px; }
+.vote-other span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.vote-other textarea { width: 100%; }
+.vote .row { margin-top: 12px; }
+.rm-status { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.rm-status.new { background: #dcfce7; color: #166534; }
+@media (max-width: 600px) { .vote-options { grid-template-columns: 1fr; } }

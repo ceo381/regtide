@@ -7,6 +7,7 @@ import { ADMIN_EMAIL, sendDailyAdminReport } from "@/lib/admin-report";
 import { supabaseAdmin } from "@/lib/supabase";
 import { deleteChannel, upsertChannel, validateChannel } from "@/lib/channels";
 import { recordUnsubscribe, type ChurnSource } from "@/lib/churn";
+import { closeRound, createRound, deleteSuggestion, markReleased, toggleResults } from "@/lib/votes";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -75,6 +76,26 @@ export async function POST(req: NextRequest) {
       if (!code) return back("채널 코드가 없습니다.");
       await deleteChannel(code);
       return back(`채널 등록 "${code}" 을 삭제했습니다. (구독자의 채널 값은 유지됩니다)`);
+    }
+    if (action === "vote_create") {
+      const r = await createRound(String(form.get("title") ?? ""), String(form.get("options") ?? "").split(/\r?\n/));
+      return back(r.ok ? "새 투표 라운드를 열었습니다. 랜딩과 다음 리포트에 투표 상자가 나타납니다." : `라운드 생성 실패: ${r.error}`);
+    }
+    if (action === "vote_close") {
+      const r = await closeRound(String(form.get("round_id") ?? ""), String(form.get("release_note") ?? ""));
+      return back(r.ok ? "라운드를 마감했습니다." : `마감 실패: ${r.error}`);
+    }
+    if (action === "vote_toggle_results") {
+      const r = await toggleResults(String(form.get("round_id") ?? ""), String(form.get("show")) === "1");
+      return back(r.ok ? "득표 공개 설정을 바꿨습니다." : `실패: ${r.error}`);
+    }
+    if (action === "vote_release") {
+      const r = await markReleased(String(form.get("option_id") ?? ""), String(form.get("released")) === "1");
+      return back(r.ok ? "출시 표시를 바꿨습니다. 랜딩의 이력과 다음 리포트에 반영됩니다." : `실패: ${r.error}`);
+    }
+    if (action === "suggestion_delete") {
+      const r = await deleteSuggestion(String(form.get("id") ?? ""));
+      return back(r.ok ? "건의를 삭제했습니다." : `실패: ${r.error}`);
     }
     return back("알 수 없는 작업입니다.");
   } catch (e) {
