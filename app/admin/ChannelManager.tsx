@@ -1,6 +1,7 @@
 "use client";
 import { Fragment, useState } from "react";
 import { useSort } from "./useSort";
+import TimeSeriesChart from "./TimeSeriesChart";
 
 export interface ChannelView {
   code: string;
@@ -97,12 +98,36 @@ function ChannelForm({ site, initial, onClose }: { site: string; initial?: Parti
   );
 }
 
-export default function ChannelManager({ site, channels, daily }: { site: string; channels: ChannelView[]; daily: { day: string; counts: Record<string, number> }[] }) {
+const CHART_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#4a3aa7"]; // dataviz 검증 팔레트 (light)
+
+export default function ChannelManager({ site, channels, daily, visitsByDay, visitsAvailable, totalBefore }: {
+  site: string;
+  channels: ChannelView[];
+  daily: { day: string; counts: Record<string, number> }[];
+  visitsByDay: { day: string; count: number }[];
+  visitsAvailable: boolean;
+  /** 14일 구간 시작 전까지의 누적 구독자 수 (누적 그래프 기준점) */
+  totalBefore: number;
+}) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const keys = channels.map((c) => c.code);
   const srt = useSort(channels, COLS, { key: "total", dir: "desc" });
+
+  // 그래프 데이터
+  const days = daily.map((d) => d.day);
+  const signups = daily.map((d) => keys.reduce((a, k) => a + (d.counts[k] || 0), 0));
+  const visits = visitsByDay.map((v) => v.count);
+  const cumulative = signups.reduce<number[]>((acc, n, i) => { acc.push((i ? acc[i - 1] : totalBefore) + n); return acc; }, []);
+  // 채널별: 구독자 많은 순 상위 3개 + 나머지 "기타" (색 4개 고정 순서)
+  const ranked = [...channels].sort((a, b) => b.total - a.total).map((c) => c.code);
+  const top = ranked.slice(0, 3), rest = ranked.slice(3);
+  const nameOf = (k: string) => channels.find((c) => c.code === k)?.name ?? k;
+  const channelSeries = [
+    ...top.map((k, i) => ({ key: k, label: nameOf(k).length > 11 ? `${nameOf(k).slice(0, 11)}…` : nameOf(k), color: CHART_COLORS[i], values: daily.map((d) => d.counts[k] || 0) })),
+    ...(rest.length ? [{ key: "_rest", label: `기타 ${rest.length}개`, color: CHART_COLORS[3], values: daily.map((d) => rest.reduce((a, k) => a + (d.counts[k] || 0), 0)) }] : []),
+  ];
   const isPseudo = (code: string) => code.startsWith("("); // "(직접/미상)" — ref 없이 온 구독자 묶음. 링크·편집 없음
 
   return (
@@ -201,6 +226,22 @@ export default function ChannelManager({ site, channels, daily }: { site: string
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="card">
+        <h2>최근 14일 추이</h2>
+        <p className="sub">그래프에 마우스를 올리면 날짜별 값이 보입니다. 아래 표가 같은 데이터의 표 보기입니다.</p>
+        <TimeSeriesChart
+          title="유입 · 신규 구독 (일별)"
+          sub={visitsAvailable ? "유입 = 랜딩 방문(브라우저 세션당 1회) · 신규 구독 = 전 채널 합계" : "유입은 visits 테이블 마이그레이션 후 집계됩니다"}
+          days={days}
+          series={[
+            ...(visitsAvailable ? [{ key: "visits", label: "유입", color: CHART_COLORS[0], values: visits }] : []),
+            { key: "signups", label: "신규 구독", color: CHART_COLORS[1], values: signups },
+          ]}
+        />
+        <TimeSeriesChart title="채널별 신규 구독 (일별)" sub="구독자 많은 순 상위 3개 채널 + 기타" days={days} series={channelSeries} />
+        <TimeSeriesChart title="누적 구독자" sub="구간 시작 전 누적 + 일별 신규" days={days} series={[{ key: "cum", label: "누적 구독자", color: CHART_COLORS[3], values: cumulative }]} height={160} />
       </section>
 
       <section className="card">

@@ -145,6 +145,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <ChannelManager
       site={site}
       daily={d.channelDaily}
+      visitsByDay={d.visitsByDay}
+      visitsAvailable={d.visits.available}
+      totalBefore={d.subscribers.length - d.signupsByDay.reduce((a, b) => a + b.count, 0)}
       channels={d.channels.map((c) => ({
         code: c.ref,
         name: c.registry?.name ?? (c.ref === NO_REF ? NO_REF : null),
