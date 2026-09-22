@@ -19,7 +19,10 @@ import { classifyPending } from "@/lib/classify";
 import { sendWeeklyDigests, weekWindow, type Mailer } from "@/lib/digest";
 import { pageWatchAdapter } from "@/lib/sources/page-watch";
 import { mfdsRssAdapter } from "@/lib/sources/mfds-rss";
-import type { SourceAdapter } from "@/lib/sources";
+import { allAdapters, type SourceAdapter } from "@/lib/sources";
+import { describeSource } from "@/lib/source-info";
+import { consecutiveZeroRuns } from "@/lib/collect";
+import { checkCollection, checkDisclaimerTemplate } from "@/lib/health";
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://regtide.example";
 process.env.MAIL_FROM = "RegTide <test@regtide.example>";
@@ -260,6 +263,65 @@ async function main() {
     assert.equal(r2.sent, 1);
     assert.equal(sent[sent.length - 1].to, "gmp@company.kr");
     assert.equal(db.tables.deliveries.length, before);
+  });
+
+  console.log("\n[핵심 검증 A] 수집 누락 방지");
+  await ok("모든 수집 어댑터가 출처 메타데이터(발행 기관·링크)에 등록되어 있다", async () => {
+    const missing = allAdapters()
+      .map((a) => a.key)
+      .filter((k) => { const si = describeSource(k); return !si.url || si.agency === k; });
+    assert.deepEqual(missing, [], `출처 미등록 소스: ${missing.join(", ")} → lib/source-info.ts 에 추가`);
+  });
+  await ok("수집 이력이 누적되고 '연속 0건' 소스를 계산할 수 있다", async () => {
+    const last = JSON.parse(String(db.tables.page_snapshots.find((r) => r.source_key === "admin:last_collect")!.content));
+    assert.ok(Array.isArray(last.history) && last.history.length >= 3, "collect 3회 실행 이력이 있어야 함");
+    assert.equal(consecutiveZeroRuns(last.history, "mfds_rss:data0009"), 0, "정상 소스는 0");
+    const fake = Array.from({ length: 8 }, (_, i) => ({ ranAt: String(i), bySource: { x: 0, y: i === 7 ? 0 : 1 }, errors: 0, skipped: 0 }));
+    assert.equal(consecutiveZeroRuns(fake, "x"), 8);
+    assert.equal(consecutiveZeroRuns(fake, "y"), 1);
+    assert.equal(consecutiveZeroRuns(fake, "z"), 0, "이력에 없는 소스는 0");
+  });
+
+  console.log("\n[핵심 검증 B] 면책·고지");
+  await ok("모든 다이제스트 메일에 면책 고지·원문 확인 안내·구독해지 링크가 있고 AI 언급이 없다", async () => {
+    assert.ok(sent.length >= 3);
+    for (const m of sent) {
+      const footer = m.html.slice(m.html.indexOf("이용 안내 및 면책"));
+      assert.ok(footer.length > 100, "면책 섹션 존재");
+      assert.ok(footer.includes("참고용 정보"), "'참고용' 명시");
+      assert.ok(footer.includes("법적 효력이 없습니다"), "법적 효력 부인");
+      assert.ok(footer.includes("원문 링크에서 확인"), "원문 확인 안내");
+      assert.ok(footer.includes("책임은 이용자에게"), "책임 귀속");
+      assert.ok(footer.includes("/disclaimer"), "면책조항 전문 링크");
+      assert.ok(footer.includes("/api/unsubscribe?token="), "구독해지 링크");
+      assert.ok(!/\bAI\b|인공지능|자동 요약|생성형/.test(footer), "면책 문구에 AI 언급 금지");
+      assert.ok(!m.html.includes("수신거부"), "'수신거부' 대신 '구독해지' 사용");
+    }
+  });
+  await ok("모든 항목에 출처·발표/감지 일시·수집 일시가 표기된다", async () => {
+    const m = sent.find((x) => x.to === "gmp@company.kr")!;
+    const items = m.html.split('<tr><td style="padding:16px 0').slice(1);
+    assert.ok(items.length >= 1);
+    for (const it of items) {
+      assert.ok(it.includes("출처:"), "출처 표기");
+      assert.ok(/(기관 발표|변경 감지)일시:/.test(it), "발표/감지 일시 표기");
+      assert.ok(it.includes("RegTide 수집:"), "수집 일시 표기");
+    }
+  });
+
+  await ok("상태 점검: 면책 템플릿 자체 점검이 통과하고, 수집 이상(오래됨·오류·연속 0건)을 감지한다", async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = "https://regtide.example";
+    const disc = checkDisclaimerTemplate();
+    assert.deepEqual(disc.filter((i) => i.level === "critical"), [], "면책 템플릿 필수 문구 누락 없음");
+    const fresh = { ranAt: new Date().toISOString(), since: "", fetched: 1, inserted: 1, bySource: { "mfds_rss:data0009": 1 }, skipped: [], errors: [], history: [] };
+    const stale = checkCollection({ ...fresh, ranAt: new Date(Date.now() - 40 * 3600_000).toISOString() });
+    assert.ok(stale.some((i) => i.level === "critical" && i.title.includes("마지막 수집")), "40시간 전 수집 → 즉시 조치");
+    const errored = checkCollection({ ...fresh, errors: [{ source: "federal_register", error: "HTTP 500" }] });
+    assert.ok(errored.some((i) => i.level === "critical" && i.title.includes("소스 오류")), "소스 오류 → 즉시 조치");
+    const hist = Array.from({ length: 7 }, (_, i) => ({ ranAt: String(i), bySource: { "mfds_rss:ntc0021": 0 }, errors: 0, skipped: 0 }));
+    const zero = checkCollection({ ...fresh, bySource: { "mfds_rss:ntc0021": 0 }, history: hist });
+    assert.ok(zero.some((i) => i.level === "critical" && i.title.includes("수집 누락 경보")), "7회 연속 0건 → 누락 경보");
+    assert.ok(checkCollection(null).some((i) => i.title === "수집 기록 없음"));
   });
 
   console.log("\n[6] 구독 API 입력 검증");

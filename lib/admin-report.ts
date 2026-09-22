@@ -1,8 +1,9 @@
 import { CATALOG_BY_ID } from "@/lib/catalog";
 import { resendMailer, type Mailer } from "@/lib/digest";
 import { supabaseAdmin, type SubscriberRow } from "@/lib/supabase";
-import { readLastCollect, type CollectResult } from "@/lib/collect";
+import { consecutiveZeroRuns, readLastCollect, type LastCollect } from "@/lib/collect";
 import { describeSource } from "@/lib/source-info";
+import { computeHealth, type HealthReport } from "@/lib/health";
 
 /**
  * 운영자용 리포트 (구독자 현황) — 매일 아침 발송 + 구독자 수가 N의 배수에 도달할 때 즉시 발송
@@ -35,11 +36,12 @@ export interface AdminStats {
   matched24h: number;
   weekDeliveries: Record<string, number>; // status → count
   topCatalog: { id: string; label: string; count: number }[];
-  lastCollect: (CollectResult & { ranAt: string; since: string }) | null;
+  lastCollect: LastCollect | null;
   /** 같은 회사(도메인)에서 2명 이상 구독 — 조직 내 확산 지표. 개인 메일 도메인 제외 */
   multiSeatDomains: { domain: string; count: number }[];
   companyDomains: number; // 회사 도메인 수 (개인 메일 제외)
   personalMailCount: number;
+  health?: HealthReport;
 }
 
 /** 개인용 메일 도메인 — 조직 확산 지표에서 제외 */
@@ -102,7 +104,8 @@ export async function collectAdminStats(now = new Date(), hours = 24): Promise<A
     .slice(0, 8)
     .map(([id, count]) => ({ id, label: CATALOG_BY_ID[id]?.label ?? id, count }));
 
-  return { now, totalActive, newSubscribers: (newSubsQ.data ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect, multiSeatDomains, companyDomains, personalMailCount };
+  const health = await computeHealth(lastCollect, now).catch(() => undefined);
+  return { now, totalActive, newSubscribers: (newSubsQ.data ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect, multiSeatDomains, companyDomains, personalMailCount, health };
 }
 
 export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: string }) {
@@ -130,6 +133,7 @@ export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: str
     <p style="margin:0 0 4px;color:#667085;font-size:13px">RegTide 운영 리포트 · ${esc(fmtKst(s.now))}</p>
     <h1 style="margin:0 0 12px;font-size:22px;color:#101828">${esc(opts.title)}</h1>
     ${opts.lead ? `<p style="margin:0 0 16px;color:#344054;font-size:15px">${esc(opts.lead)}</p>` : ""}
+    ${renderHealth(s.health)}
     <table style="border-collapse:collapse;font-size:15px;margin-bottom:16px">
       ${row("활성 구독자", `${s.totalActive}명`)}
       ${row("최근 24시간 신규 구독", `${s.newSubscribers.length}명`)}
@@ -146,6 +150,26 @@ export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: str
 </div></body></html>`;
 }
 
+function renderHealth(h: HealthReport | undefined) {
+  if (!h) return "";
+  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const actionable = h.issues.filter((i) => i.level !== "info");
+  if (actionable.length === 0) {
+    return `<div style="background:#ecfdf3;border:1px solid #abefc6;border-radius:8px;padding:10px 14px;margin:0 0 16px;color:#067647;font-size:14px;font-weight:600">상태 정상 — 수집 누락·면책 고지·발송·설정 점검 통과${h.counts.info ? ` <span style="font-weight:400;color:#667085">(참고 ${h.counts.info}건은 대시보드에서)</span>` : ""}</div>`;
+  }
+  const color = h.counts.critical ? "#b42318" : "#b54708";
+  const bg = h.counts.critical ? "#fffbfa" : "#fffcf5";
+  const border = h.counts.critical ? "#fecdca" : "#fedf89";
+  const items = actionable
+    .map((i) => `<li style="margin:0 0 8px"><strong style="color:${i.level === "critical" ? "#b42318" : "#b54708"}">[${i.level === "critical" ? "즉시" : "확인"} · ${esc(i.area)}]</strong> ${esc(i.title)}<br><span style="color:#344054">${esc(i.detail)}</span>${i.action ? `<br><span style="color:#1d4ed8">→ ${esc(i.action)}</span>` : ""}</li>`)
+    .join("");
+  return `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 14px;margin:0 0 16px">
+    <p style="margin:0 0 8px;color:${color};font-size:15px;font-weight:700">${h.counts.critical ? `문제 ${h.counts.critical}건 — 즉시 조치 필요` : `확인 필요 ${h.counts.warning}건`}</p>
+    <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.5">${items}</ul>
+    ${site ? `<p style="margin:8px 0 0;font-size:12px"><a href="${esc(site)}/admin" style="color:#667085">관리자 대시보드에서 자세히 보기</a></p>` : ""}
+  </div>`;
+}
+
 function renderCollectStatus(c: AdminStats["lastCollect"]) {
   if (!c) return `<p style="margin:8px 0 0;color:#667085;font-size:14px">수집 기록 없음 (월요일 크론 실행 전)</p>`;
   const rows = Object.entries(c.bySource ?? {})
@@ -156,9 +180,16 @@ function renderCollectStatus(c: AdminStats["lastCollect"]) {
       return `<tr><td style="padding:3px 10px 3px 0;color:#667085">${esc(si.agency)} · ${esc(si.name || k)}</td><td style="padding:3px 0;color:${color};font-weight:600;text-align:right">${n}건</td></tr>`;
     })
     .join("");
-  const skipped = (c.skipped ?? []).map((x) => `<li>건너뜀: ${esc(x.source)} — ${esc(x.reason)}</li>`).join("");
+  // 수집 누락 경보: 페이지 감시가 아닌 소스가 7회 이상 연속 0건이면 피드 구조 변경·차단 가능성
+  const stale = Object.keys(c.bySource ?? {})
+    .filter((k) => !k.startsWith("page_watch:"))
+    .map((k) => ({ k, n: consecutiveZeroRuns(c.history, k) }))
+    .filter((x) => x.n >= 7)
+    .map((x) => `<li style="color:#b42318"><strong>수집 누락 경보</strong>: ${esc(describeSource(x.k).agency)} · ${esc(describeSource(x.k).name || x.k)} 가 ${x.n}회 연속 0건 — 피드 URL·구조 변경 또는 차단 여부를 확인하세요.</li>`)
+    .join("");
+  const skipped = stale + (c.skipped ?? []).map((x) => `<li>건너뜀: ${esc(x.source)} — ${esc(x.reason)}</li>`).join("");
   const errors = (c.errors ?? []).map((x) => `<li style="color:#b42318">오류: ${esc(x.source)} — ${esc(x.error)}</li>`).join("");
-  return `<p style="margin:8px 0 4px;color:#667085;font-size:13px">실행 ${esc(fmtKst(c.ranAt))} · 수집 기간 ${esc(fmtKst(c.since))} 이후 · 가져옴 ${c.fetched}건 / 신규 저장 ${c.inserted}건</p>
+  return `<p style="margin:8px 0 4px;color:#667085;font-size:13px">실행 ${esc(fmtKst(c.ranAt))} · 수집 기간 ${esc(fmtKst(c.since))} 이후 · 가져옴 ${c.fetched}건 / 신규 저장 ${c.inserted}건 · 이력 ${c.history?.length ?? 1}회</p>
     <table style="border-collapse:collapse;font-size:13px">${rows}</table>
     ${skipped || errors ? `<ul style="margin:8px 0 0;padding-left:18px;color:#344054;font-size:13px">${skipped}${errors}</ul>` : ""}
     <p style="margin:6px 0 0;color:#98a2b3;font-size:12px">0건 소스가 여러 주 계속되면 피드 구조 변경·차단을 의심하세요. 페이지 감시(EU·ISO·IEC) 소스는 변경이 없으면 0건이 정상입니다.</p>`;

@@ -168,6 +168,30 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
       {msg && <div className="admin-flash">{msg}</div>}
 
+      <section className={`health ${d.health.counts.critical ? "crit" : d.health.counts.warning ? "warn" : "ok"}`}>
+        <div className="health-head">
+          <h2>
+            {d.health.counts.critical ? `문제 ${d.health.counts.critical}건 — 즉시 조치 필요` : d.health.counts.warning ? `확인 필요 ${d.health.counts.warning}건` : "상태 정상"}
+          </h2>
+          <span className="sub">수집 누락 · 면책 고지 · 발송 · 설정 점검 · {fmt(d.health.checkedAt)}{d.health.counts.info ? ` · 참고 ${d.health.counts.info}건` : ""}</span>
+        </div>
+        {d.health.issues.length > 0 && (
+          <ul className="health-list">
+            {d.health.issues.map((i, k) => (
+              <li key={k} className={`health-item ${i.level}`}>
+                <span className="health-badge">{i.level === "critical" ? "즉시" : i.level === "warning" ? "확인" : "참고"}</span>
+                <span className="health-area">{i.area}</span>
+                <div>
+                  <strong>{i.title}</strong>
+                  <div className="health-detail">{i.detail}</div>
+                  {i.action && <div className="health-action">→ {i.action}</div>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <section className="admin-kpis">
         <div className="kpi"><span>활성 구독자</span><strong>{stats.totalActive}</strong><small>다음 마일스톤 {nextMilestone}명</small></div>
         <div className="kpi"><span>24시간 신규</span><strong>{stats.newSubscribers.length}</strong><small>최근 14일 합계 {d.signupsByDay.reduce((a, b) => a + b.count, 0)}</small></div>

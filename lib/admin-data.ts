@@ -1,5 +1,6 @@
 import { supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { collectAdminStats, type AdminStats } from "@/lib/admin-report";
+import { computeHealth, type HealthReport } from "@/lib/health";
 
 /** 대시보드용 데이터 묶음 (서버 컴포넌트에서 1회 호출) */
 export interface DashboardData {
@@ -9,6 +10,7 @@ export interface DashboardData {
   deliveriesThisWeek: { email: string; status: string; sent_at: string; error: string | null; update_count: number }[];
   signupsByDay: { day: string; count: number }[]; // 최근 14일, KST 날짜
   weekStart: string;
+  health: HealthReport;
 }
 
 function kstDay(iso: string) {
@@ -32,6 +34,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   if (upsQ.error) throw upsQ.error;
   if (delsQ.error) throw delsQ.error;
   const subs = subsQ.data ?? [];
+  const health = await computeHealth(stats.lastCollect, now);
 
   const subById = new Map(subs.map((s) => [s.id as string, s.email as string]));
   const deliveriesThisWeek = ((delsQ.data ?? []) as { subscriber_id: string; status: string; sent_at: string; error: string | null; update_ids: string[] }[]).map((d) => ({
@@ -59,5 +62,6 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     deliveriesThisWeek,
     signupsByDay: Object.entries(days).map(([day, count]) => ({ day, count })),
     weekStart,
+    health,
   };
 }

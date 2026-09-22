@@ -178,3 +178,24 @@ footer a { color: var(--muted); }
 .admin-alert { background: #fef3f2; border: 1px solid #fecdca; color: var(--danger); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 0; }
 .admin-login-card input, .admin-search input { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; }
 .admin-tab { background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer; font-family: inherit; }
+
+/* 상태 점검 패널 */
+.health { margin-top: 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--card); padding: 16px 18px; }
+.health.ok { border-color: #abefc6; background: #f6fef9; }
+.health.warn { border-color: #fedf89; background: #fffcf5; }
+.health.crit { border-color: #fecdca; background: #fffbfa; }
+.health-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.health-head h2 { margin: 0; font-size: 16px; }
+.health.ok .health-head h2 { color: var(--ok); }
+.health.warn .health-head h2 { color: #b54708; }
+.health.crit .health-head h2 { color: var(--danger); }
+.health-head .sub { margin: 0; font-size: 12px; }
+.health-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.health-item { display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: start; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13.5px; }
+.health-badge { font-size: 11px; font-weight: 700; border-radius: 4px; padding: 2px 6px; margin-top: 2px; }
+.health-item.critical .health-badge { background: #fee4e2; color: var(--danger); }
+.health-item.warning .health-badge { background: #fef0c7; color: #b54708; }
+.health-item.info .health-badge { background: var(--chip); color: var(--muted); }
+.health-area { color: var(--muted); font-size: 12px; margin-top: 3px; white-space: nowrap; }
+.health-detail { color: #344054; margin-top: 2px; }
+.health-action { color: var(--primary); font-size: 12.5px; margin-top: 4px; }

@@ -74,16 +74,42 @@ export async function collectUpdates(since: Date, adapters: SourceAdapter[] = de
 const LAST_COLLECT_KEY = "admin:last_collect";
 
 /** 마지막 수집 결과를 page_snapshots 에 저장 (운영 리포트의 "소스 상태" 표시용). 실패해도 수집 결과에는 영향 없음 */
+export interface CollectHistoryEntry { ranAt: string; bySource: Record<string, number>; errors: number; skipped: number }
+const HISTORY_MAX = 30;
+
 async function saveLastCollect(sb: ReturnType<typeof supabaseAdmin>, since: Date, r: CollectResult) {
   try {
-    const content = JSON.stringify({ ranAt: new Date().toISOString(), since: since.toISOString(), ...r });
+    // 이전 이력(최근 30회)을 이어 붙여 "특정 소스가 N회 연속 0건" 같은 이상을 감지할 수 있게 함
+    let history: CollectHistoryEntry[] = [];
+    try {
+      const prev = await readLastCollect();
+      history = prev?.history ?? [];
+    } catch { /* 첫 실행 */ }
+    history.push({ ranAt: new Date().toISOString(), bySource: r.bySource, errors: r.errors.length, skipped: r.skipped.length });
+    if (history.length > HISTORY_MAX) history = history.slice(-HISTORY_MAX);
+    const content = JSON.stringify({ ranAt: new Date().toISOString(), since: since.toISOString(), ...r, history });
     await sb.from("page_snapshots").upsert({ source_key: LAST_COLLECT_KEY, content_hash: String(content.length), content, fetched_at: new Date().toISOString() }, { onConflict: "source_key" });
   } catch (e) {
     console.error("[collect] saveLastCollect failed:", (e as Error).message);
   }
 }
 
-export async function readLastCollect(): Promise<(CollectResult & { ranAt: string; since: string }) | null> {
+export type LastCollect = CollectResult & { ranAt: string; since: string; history?: CollectHistoryEntry[] };
+
+/** 소스별 연속 0건 횟수 (최근 이력 기준). 페이지 감시 소스는 변경 없으면 0이 정상이므로 호출측에서 구분 */
+export function consecutiveZeroRuns(history: CollectHistoryEntry[] | undefined, source: string): number {
+  if (!history?.length) return 0;
+  let n = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const v = history[i].bySource?.[source];
+    if (v === undefined) break; // 그 실행에서 소스가 없었음(비활성/오류) → 연속 집계 중단
+    if (v !== 0) break;
+    n++;
+  }
+  return n;
+}
+
+export async function readLastCollect(): Promise<LastCollect | null> {
   const { data } = await supabaseAdmin().from("page_snapshots").select("content").eq("source_key", LAST_COLLECT_KEY).maybeSingle();
   const c = (data as { content?: string } | null)?.content;
   if (!c) return null;
