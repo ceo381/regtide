@@ -36,7 +36,15 @@ export interface AdminStats {
   weekDeliveries: Record<string, number>; // status → count
   topCatalog: { id: string; label: string; count: number }[];
   lastCollect: (CollectResult & { ranAt: string; since: string }) | null;
+  /** 같은 회사(도메인)에서 2명 이상 구독 — 조직 내 확산 지표. 개인 메일 도메인 제외 */
+  multiSeatDomains: { domain: string; count: number }[];
+  companyDomains: number; // 회사 도메인 수 (개인 메일 제외)
+  personalMailCount: number;
 }
+
+/** 개인용 메일 도메인 — 조직 확산 지표에서 제외 */
+const PERSONAL_MAIL = new Set(["naver.com", "gmail.com", "daum.net", "hanmail.net", "nate.com", "kakao.com", "hotmail.com", "outlook.com", "yahoo.com", "icloud.com", "live.com", "me.com"]);
+const OWN_DOMAIN = () => (process.env.ADMIN_EMAIL_DOMAIN ?? "breathings.co.kr").toLowerCase();
 
 /** 활성 구독자 수 */
 export async function countActiveSubscribers(): Promise<number> {
@@ -75,17 +83,28 @@ export async function collectAdminStats(now = new Date(), hours = 24): Promise<A
   const weekDeliveries: Record<string, number> = {};
   for (const d of (dels ?? []) as { status: string }[]) weekDeliveries[d.status] = (weekDeliveries[d.status] ?? 0) + 1;
 
-  const { data: allSubs, error: e4 } = await sb.from("subscribers").select("catalog_ids").eq("active", true);
+  const { data: allSubs, error: e4 } = await sb.from("subscribers").select("email, catalog_ids").eq("active", true);
   if (e4) throw e4;
   const tally = new Map<string, number>();
-  for (const s of (allSubs ?? []) as { catalog_ids: string[] }[]) for (const id of s.catalog_ids ?? []) tally.set(id, (tally.get(id) ?? 0) + 1);
+  const domainTally = new Map<string, number>();
+  let personalMailCount = 0;
+  for (const s of (allSubs ?? []) as { email: string; catalog_ids: string[] }[]) {
+    for (const id of s.catalog_ids ?? []) tally.set(id, (tally.get(id) ?? 0) + 1);
+    const domain = (s.email.split("@")[1] ?? "").toLowerCase();
+    if (!domain) continue;
+    if (PERSONAL_MAIL.has(domain)) { personalMailCount++; continue; }
+    if (domain === OWN_DOMAIN()) continue; // 운영자 테스트 계정 제외
+    domainTally.set(domain, (domainTally.get(domain) ?? 0) + 1);
+  }
+  const multiSeatDomains = [...domainTally.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).map(([domain, count]) => ({ domain, count }));
+  const companyDomains = domainTally.size;
   const topCatalog = [...tally.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([id, count]) => ({ id, label: CATALOG_BY_ID[id]?.label ?? id, count }));
 
   const lastCollect = await readLastCollect().catch(() => null);
-  return { now, totalActive, newSubscribers: (newSubs ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect };
+  return { now, totalActive, newSubscribers: (newSubs ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect, multiSeatDomains, companyDomains, personalMailCount };
 }
 
 export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: string }) {
@@ -118,6 +137,8 @@ export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: str
       ${row("최근 24시간 신규 구독", `${s.newSubscribers.length}명`)}
       ${row("최근 24시간 수집", updLine)}
       ${row("이번 주 발송", delLine)}
+      ${row("구독자 구성", `회사 도메인 ${s.companyDomains}곳 · 개인 메일 ${s.personalMailCount}명`)}
+      ${row("같은 회사 2명 이상", s.multiSeatDomains.length ? s.multiSeatDomains.map((d) => `${esc(d.domain)} ${d.count}명`).join(" · ") : `<span style="color:#667085;font-weight:400">아직 없음 (조직 내 확산 지표)</span>`)}
     </table>
     <h3 style="margin:16px 0 0;font-size:15px;color:#101828">신규 구독자</h3>${newList}
     <h3 style="margin:20px 0 0;font-size:15px;color:#101828">많이 선택된 규격·인증</h3>${top}

@@ -347,7 +347,7 @@ git push                         # Vercel 이 감지해 1~2분 내 자동 재배
 ### L-1. 두 가지 알림
 | 종류 | 시점 | 내용 |
 |---|---|---|
-| 일일 리포트 | 매일 08:00 KST (Vercel Cron `0 23 * * *`, `/api/cron/daily-report`) | 활성 구독자 수, 최근 24시간 신규 구독자(이메일·품목·규격 수), 24시간 수집 건수(관할별), 이번 주 발송 상태, 많이 선택된 규격 Top 8 |
+| 일일 리포트 | 매일 08:00 KST (Vercel Cron `0 23 * * *`, `/api/cron/daily-report`) | 활성 구독자 수, 최근 24시간 신규 구독자(이메일·품목·규격 수), 24시간 수집 건수(관할별), 이번 주 발송 상태, **구독자 구성(회사 도메인 수·개인 메일 수)과 "같은 회사 2명 이상" 도메인(조직 내 확산 지표, 개인 메일·운영자 도메인 제외)**, 많이 선택된 규격 Top 8, 수집 소스 상태 |
 | 마일스톤 알림 | 신규 구독으로 활성 구독자가 **N의 배수**(기본 10)가 되는 즉시 | 제목 `[RegTide 운영] 🎉 구독자 N명 달성` + 위와 같은 현황 |
 
 - 마일스톤은 "정확히 N명"이 아니라 **마지막 알림 이후 새 N 구간을 넘었는지**로 판정합니다(9→11명이면 10명 알림). 마지막 알림 구간은 `page_snapshots` 테이블의 `admin:milestone_notified` 행에 저장되며, 신규 구독 직후와 매일 아침 크론에서 확인하므로 배포 전에 이미 넘긴 구간이나 발송 실패분도 다음 확인 때 따라잡습니다.
@@ -433,6 +433,39 @@ curl.exe -H "Authorization: Bearer <CRON_SECRET값>" "https://regtide-pi.vercel.
 
 ---
 
+## O. 관리자 대시보드 (2026-09-22)
+
+`https://regtide-pi.vercel.app/admin` — 운영자 1명만 로그인하는 단일 계정 대시보드.
+
+### O-1. 설정 (Vercel 환경변수 추가 → Redeploy)
+```
+ADMIN_USER=원하는아이디            # 미설정 시 admin
+ADMIN_PASSWORD=긴-비밀번호          # ★ 필수. 없으면 /admin 전체가 비활성(로그인 화면에 안내만 표시)
+ADMIN_SESSION_SECRET=랜덤문자열     # 선택. 없으면 CRON_SECRET 으로 세션 서명
+```
+로컬 `.env` 에도 같은 키를 넣으면 `npm run dev` 에서 http://localhost:3000/admin 으로 확인 가능.
+
+### O-2. 보안 구조
+- 비밀번호는 DB 에 저장하지 않고 환경변수와 상수시간 비교. 로그인 성공 시 **HMAC-SHA256 서명된 httpOnly 쿠키**(12시간) 발급, 서버 세션 저장 없음.
+- 쿠키를 위조·변조하면 서명 검증에 실패해 로그인 화면으로 돌아감. 로그아웃은 쿠키 삭제.
+- 로그인 시도는 IP 당 15분에 10회로 제한. `/admin` 전체에 `noindex`.
+- 비밀번호를 바꾸려면 Vercel 환경변수 수정 → Redeploy (기존 세션은 쿠키 만료까지 유효. 즉시 무효화하려면 `ADMIN_SESSION_SECRET` 도 함께 변경).
+
+### O-3. 화면 구성
+| 탭 | 내용 |
+|---|---|
+| 상단 KPI | 활성 구독자(다음 마일스톤), 24시간 신규, 회사 도메인 수·개인 메일 수, 같은 회사 2명+ (조직 확산), 이번 주 발송 sent/failed/skipped |
+| 개요 | 최근 14일 일별 신규 구독 막대, 많이 선택된 규격 Top 8, 수집 소스 상태(소스별 건수·건너뜀·오류) |
+| 구독자 | 전체 목록(이메일·품목·규격 수·가입일·마지막 발송·상태), 검색, **비활성화**(발송 제외) / **삭제**(구독해지와 동일) |
+| 수집 항목 | 최근 60건: 수집일·발표일·관할·영향도·제목(원문 링크)·출처·매칭 규격. "무관" 항목 점검용 |
+| 발송 기록 | 이번 주 `deliveries` (시각·이메일·상태·항목 수·오류) |
+| 운영 작업 | 수집 실행 / 분류 실행 / 테스트 다이제스트 → 운영자 / 운영 리포트 지금 발송. **전체 구독자 발송 버튼은 의도적으로 없음**(월요일 크론 전용) |
+
+### O-4. 관련 파일
+`lib/admin-auth.ts`(인증·세션), `lib/admin-data.ts`(대시보드 데이터), `app/admin/page.tsx`·`app/admin/login/page.tsx`·`app/admin/layout.tsx`(화면), `app/api/admin/login|logout|run/route.ts`(로그인·로그아웃·운영 작업), `app/globals.css`(`.admin*` 스타일).
+
+---
+
 ## 자주 만나는 문제
 
 | 증상 | 원인·해결 |
@@ -452,6 +485,7 @@ curl.exe -H "Authorization: Bearer <CRON_SECRET값>" "https://regtide-pi.vercel.
 | `git push` → `Everything up-to-date` | 커밋 안 됨 → J 절 참고 |
 | 구독해지 링크가 localhost 를 가리킴 | Vercel `NEXT_PUBLIC_SITE_URL` 미수정 → 배포 주소로 변경 후 Redeploy |
 | push 했는데 배포 사이트에 내용이 반영 안 됨 | ① `git log --oneline -3` 와 GitHub 커밋이 같은지 ② Vercel `Settings → Git` 의 Production Branch 가 `main` 인지 ③ `Deployments` 에 새 항목이 생기는지 (J 절) ④ 브라우저 캐시 → `Ctrl+F5` |
+| `/admin` 이 항상 로그인 화면으로 돌아옴 | `ADMIN_PASSWORD` 미설정(로그인 화면에 안내 표시), 또는 로컬 http 에서 `NEXT_PUBLIC_SITE_URL` 이 `https://` 로 시작해 Secure 쿠키가 저장되지 않는 경우 → 로컬 `.env` 의 `NEXT_PUBLIC_SITE_URL` 을 `http://localhost:3000` 으로 |
 | 일일 운영 리포트가 안 옴 | Vercel `Settings → Cron Jobs` 에 `/api/cron/daily-report` 가 보이는지(vercel.json 반영은 배포 시), `MAIL_FROM` 도메인 인증 상태, `ADMIN_EMAIL` 오타. L-3 으로 수동 호출해 오류 메시지 확인 |
 | 월요일 메일이 비어 있거나 안 옴 | K-3 참고. `deliveries.status` 확인 (`sent`/`skipped_empty`/`failed`), Vercel `Logs` 에서 크론 실행 기록 확인 |
 | `npm run selftest` 가 esbuild 플랫폼 오류 | Windows 에서 설치한 `node_modules` 를 다른 OS(WSL·리눅스)에서 실행한 경우 → 해당 OS 에서 `npm install` 다시 |

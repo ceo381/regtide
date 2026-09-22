@@ -1,0 +1,70 @@
+import { supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
+import { collectAdminStats, type AdminStats } from "@/lib/admin-report";
+
+/** 대시보드용 데이터 묶음 (서버 컴포넌트에서 1회 호출) */
+export interface DashboardData {
+  stats: AdminStats;
+  subscribers: (SubscriberRow & { created_at: string; consent_at: string | null; last_sent_at: string | null })[];
+  recentUpdates: UpdateRow[];
+  deliveriesThisWeek: { email: string; status: string; sent_at: string; error: string | null; update_count: number }[];
+  signupsByDay: { day: string; count: number }[]; // 최근 14일, KST 날짜
+  weekStart: string;
+}
+
+function kstDay(iso: string) {
+  return new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().slice(0, 10);
+}
+
+export async function loadDashboard(now = new Date()): Promise<DashboardData> {
+  const sb = supabaseAdmin();
+  const stats = await collectAdminStats(now);
+
+  const { data: subs, error: e1 } = await sb.from("subscribers").select("*").order("created_at", { ascending: false });
+  if (e1) throw e1;
+
+  const { data: ups, error: e2 } = await sb
+    .from("updates")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(60);
+  if (e2) throw e2;
+
+  const kst = new Date(now.getTime() + 9 * 3600_000);
+  const monday = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() - ((kst.getUTCDay() + 6) % 7)));
+  const weekStart = monday.toISOString().slice(0, 10);
+
+  const { data: dels, error: e3 } = await sb
+    .from("deliveries")
+    .select("subscriber_id, status, sent_at, error, update_ids")
+    .eq("week_start", weekStart)
+    .order("sent_at", { ascending: false });
+  if (e3) throw e3;
+
+  const subById = new Map((subs ?? []).map((s) => [s.id as string, s.email as string]));
+  const deliveriesThisWeek = ((dels ?? []) as { subscriber_id: string; status: string; sent_at: string; error: string | null; update_ids: string[] }[]).map((d) => ({
+    email: subById.get(d.subscriber_id) ?? "(삭제된 구독자)",
+    status: d.status,
+    sent_at: d.sent_at,
+    error: d.error,
+    update_count: d.update_ids?.length ?? 0,
+  }));
+
+  const days: Record<string, number> = {};
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(kst.getTime() - i * 86400_000).toISOString().slice(0, 10);
+    days[d] = 0;
+  }
+  for (const s of (subs ?? []) as { created_at: string }[]) {
+    const d = kstDay(s.created_at);
+    if (d in days) days[d]++;
+  }
+
+  return {
+    stats,
+    subscribers: (subs ?? []) as DashboardData["subscribers"],
+    recentUpdates: (ups ?? []) as UpdateRow[],
+    deliveriesThisWeek,
+    signupsByDay: Object.entries(days).map(([day, count]) => ({ day, count })),
+    weekStart,
+  };
+}
