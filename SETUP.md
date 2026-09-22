@@ -646,3 +646,23 @@ alter table channels enable row level security;
 - 수집: 영향 없음 (수집·분류·발송 코드 변경 없음)
 - 면책·고지: 면책 문구를 `lib/email-common.ts` 한 곳으로 모아 주간 리포트와 확인 메일이 **같은 문구·같은 구독해지 안내**를 씀. 상태 점검(`checkDisclaimerTemplate`)이 두 템플릿을 모두 검사. 개인정보처리방침 1항 이용 목적에 "구독 신청 확인 메일 발송(신청 직후 1회, 설정 변경 시 1회)" 추가 — 동의 범위 안에서만 발송.
 - selftest 23개 (구독 확인 메일 검증 추가)
+
+## U. SEO (2026-09-22)
+
+### 코드에 들어간 것
+- `app/layout.tsx` — 검색용 제목·설명·키워드, canonical, Open Graph/Twitter 카드(`public/og.png` 1200×630), robots 허용, 사이트 소유 확인 메타(`GOOGLE_SITE_VERIFICATION`, `NAVER_SITE_VERIFICATION` 환경변수가 있을 때만 출력)
+- `app/robots.ts` → `/robots.txt` (관리자·API 색인 제외), `app/sitemap.ts` → `/sitemap.xml` (공개 3페이지)
+- `app/page.tsx` — 구조화 데이터(JSON-LD: Organization·WebSite·FAQPage), h1 에 "의료기기" 키워드, FAQ 6문항(`app/components/Faq.tsx`)
+- 구독해지 확인 페이지·관리자 페이지는 noindex 유지
+
+### 배포 후 할 일 (순서대로)
+1. **커스텀 도메인** — `*.vercel.app` 은 검색 신뢰도가 낮고 도메인이 바뀌면 지금까지의 색인이 사라짐. `regtide.breathings.co.kr`(또는 별도 도메인)을 Vercel → Domains 에 추가하고 `NEXT_PUBLIC_SITE_URL` 을 새 도메인으로 바꾼 뒤 Redeploy. (메일의 구독해지·면책 링크도 이 값으로 생성되므로 **바꾼 뒤 테스트 다이제스트 1통 확인**)
+2. **Google Search Console** — 속성 추가(URL 접두어) → HTML 태그 방식의 `content` 값을 `GOOGLE_SITE_VERIFICATION` 에 넣고 Redeploy → 확인 → 사이트맵 `https://<도메인>/sitemap.xml` 제출
+3. **네이버 서치어드바이저**(searchadvisor.naver.com) — 국내 RA/QA 담당자는 네이버 검색 비중이 큼. 같은 방식으로 `NAVER_SITE_VERIFICATION` → 사이트맵 제출 → "웹 페이지 수집 요청"으로 랜딩 1회 수동 요청
+4. 2주 뒤 Search Console 에서 색인 여부·노출 검색어 확인
+
+### 다음 단계 (검색 유입의 실제 동력) — 공개 아카이브
+지금 랜딩 한 페이지로는 "의료기기 규제 알림" 계열 소수 키워드만 노릴 수 있음. 검색 유입 대부분은 **개별 고시·개정 건 제목** 검색("○○ 고시 개정 입법예고", "MDCG 2026-x")에서 나오므로, 수집한 항목을 공개 페이지로 노출하는 것이 핵심:
+- `/updates` 목록 + `/updates/[id]` 상세(제목·출처·발표일·발췌·원문 링크·관련 규격) → sitemap 자동 포함
+- R 절의 이용 조건상 제목·발췌·링크에 출처 표기 형태는 모든 소스에서 허용됨(ISO/IEC 는 동향만). 면책 고지·출처 표기를 메일과 동일하게 각 페이지 하단에 둠
+- 페이지마다 구독 폼을 붙여 검색 → 구독 전환. 채널 코드 `ref=search` 로 대시보드에서 효과 추적

@@ -3,14 +3,47 @@ import { Suspense } from "react";
 import SubscribeForm from "./components/SubscribeForm";
 import UnsubNotice from "./components/UnsubNotice";
 import { COVERAGE } from "@/lib/source-info";
+import Faq, { FAQ } from "./components/Faq";
+
+const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://regtide-pi.vercel.app";
+
+/** 구조화 데이터 — WebSite(사이트), Organization(운영사), FAQPage(아래 FAQ 와 동일 문구) */
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${SITE}/#org`,
+      name: "BreaThings",
+      url: "https://breathings.co.kr",
+      email: "ceo@breathings.co.kr",
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${SITE}/#website`,
+      url: SITE,
+      name: "RegTide",
+      alternateName: "레그타이드 · 의료기기 규격·인증 변경 주간 알림",
+      description: "의료기기 규격·인증(식약처·FDA·EU MDR·ISO/IEC) 변경 사항을 매주 월요일 이메일로 알려주는 무료 서비스",
+      inLanguage: "ko",
+      publisher: { "@id": `${SITE}/#org` },
+    },
+    {
+      "@type": "FAQPage",
+      "@id": `${SITE}/#faq`,
+      mainEntity: FAQ.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
+    },
+  ],
+};
 
 export default function Home() {
   return (
     <main className="container">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
       <section className="hero">
         <p className="eyebrow">RegTide</p>
         <h1>
-          내 품목에 적용된 규격·인증,
+          내 품목에 적용된 의료기기 규격·인증,
           <br />
           바뀌면 매주 월요일 아침에 알려드립니다.
         </h1>
@@ -42,6 +75,8 @@ export default function Home() {
       </Suspense>
 
       <SubscribeForm />
+
+      <Faq />
 
       <footer>
         모든 항목에는 발행 기관(출처), 기관 발표 일시, RegTide 수집 일시(KST)와 원문 링크가 함께 표기됩니다. 지원 국가·기관: 한국(식약처·법제처), 미국(FDA), 유럽연합(European Commission·MDCG), 국제규격(ISO/IEC).

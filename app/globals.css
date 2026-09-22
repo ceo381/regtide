@@ -225,3 +225,10 @@ input, select, textarea, button { font-family: inherit; }
 .admin-table.compact td:first-child { white-space: normal; min-width: 180px; }
 .admin-table td .sub { display: block; }
 .admin-table .cell-sub { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+
+/* FAQ (랜딩) */
+.faq dl { margin: 0; }
+.faq-item { padding: 14px 0; border-top: 1px solid var(--border); }
+.faq-item:first-child { border-top: 0; padding-top: 4px; }
+.faq dt { font-weight: 600; font-size: 15px; margin: 0 0 6px; color: #101828; }
+.faq dd { margin: 0; color: #475467; font-size: 14px; line-height: 1.7; }
