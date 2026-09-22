@@ -1,5 +1,5 @@
 import { Resend } from "resend";
-import { CATALOG_BY_ID, JURISDICTION_LABEL, type Jurisdiction } from "@/lib/catalog";
+import { CATALOG, CATALOG_BY_ID, JURISDICTION_LABEL, type Jurisdiction } from "@/lib/catalog";
 import { supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { COVERAGE, describeSource, sourcesUsed } from "@/lib/source-info";
 import { COLLECT_LOOKBACK_DAYS } from "@/lib/collect";
@@ -161,7 +161,11 @@ export function resendMailer(): Mailer {
 
 export async function sendWeeklyDigests(
   now = new Date(),
-  opts: { sendEmpty?: boolean; recent?: boolean } = {},
+  /**
+   * only: 이 이메일 한 명에게만 "테스트 발송". deliveries 에 기록하지 않아 월요일 정기 발송에 영향이 없고,
+   *       제목에 [테스트] 가 붙는다. 구독자가 아닌 주소면 모든 규격을 선택한 가상 구독자로 렌더링한다.
+   */
+  opts: { sendEmpty?: boolean; recent?: boolean; only?: string } = {},
   mailer: Mailer = resendMailer(),
 ): Promise<SendResult> {
   const sb = supabaseAdmin();
@@ -178,18 +182,39 @@ export async function sendWeeklyDigests(
 
   const { data: subsData, error: sErr } = await sb.from("subscribers").select("*").eq("active", true);
   if (sErr) throw sErr;
-  const subs = (subsData ?? []) as SubscriberRow[];
+  let subs = (subsData ?? []) as SubscriberRow[];
+
+  const testOnly = opts.only?.trim().toLowerCase();
+  if (testOnly) {
+    const found = subs.find((x) => x.email.toLowerCase() === testOnly);
+    subs = [
+      found ?? {
+        id: "test",
+        email: testOnly,
+        unsubscribe_token: "test",
+        products: [{ name: "(테스트) 전체 규격", category: "2등급", catalogIds: CATALOG.map((c) => c.id) }],
+        catalog_ids: CATALOG.map((c) => c.id),
+        active: true,
+        last_sent_at: null,
+      },
+    ];
+  }
 
   const from = process.env.MAIL_FROM ?? "RegTide <onboarding@resend.dev>";
   const result: SendResult = { sent: 0, skipped: 0, failed: [] };
 
   for (const sub of subs) {
     // 같은 주에 이미 "성공 발송"했으면 건너뜀 (크론 재실행 안전). failed / skipped_empty 는 재시도 허용
-    const { data: already } = await sb.from("deliveries").select("id, status").eq("subscriber_id", sub.id).eq("week_start", weekStart).maybeSingle();
-    if (already?.status === "sent") { result.skipped++; continue; }
+    if (!testOnly) {
+      const { data: already } = await sb.from("deliveries").select("id, status").eq("subscriber_id", sub.id).eq("week_start", weekStart).maybeSingle();
+      if (already?.status === "sent") { result.skipped++; continue; }
+    }
 
+    // 테스트 발송은 deliveries 에 기록하지 않는다 (정기 발송의 중복 방지 키를 소모하지 않도록)
     const record = (row: Record<string, unknown>) =>
-      sb.from("deliveries").upsert({ subscriber_id: sub.id, week_start: weekStart, sent_at: new Date().toISOString(), ...row }, { onConflict: "subscriber_id,week_start" });
+      testOnly
+        ? Promise.resolve()
+        : sb.from("deliveries").upsert({ subscriber_id: sub.id, week_start: weekStart, sent_at: new Date().toISOString(), ...row }, { onConflict: "subscriber_id,week_start" });
 
     const mine = relevantUpdates(sub, updates);
     if (mine.length === 0 && !opts.sendEmpty) {
@@ -202,11 +227,11 @@ export async function sendWeeklyDigests(
       const sent = await mailer.send({
         from,
         to: sub.email,
-        subject: `[RegTide] 이번 주 의료기기 규제 업데이트 ${mine.length}건 (${weekStart} 주)`,
+        subject: `${testOnly ? "[테스트] " : ""}[RegTide] 이번 주 의료기기 규제 업데이트 ${mine.length}건 (${weekStart} 주)`,
         html: renderDigestHtml(sub, mine, { start: periodStart, end: periodEnd, generatedAt: now }),
       });
       await record({ update_ids: mine.map((u) => u.id), provider_message_id: sent.id ?? null, status: "sent", error: null });
-      await sb.from("subscribers").update({ last_sent_at: new Date().toISOString() }).eq("id", sub.id);
+      if (!testOnly) await sb.from("subscribers").update({ last_sent_at: new Date().toISOString() }).eq("id", sub.id);
       result.sent++;
     } catch (e) {
       const msg = String((e as Error).message ?? e);

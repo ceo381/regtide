@@ -8,6 +8,7 @@
  * 옵션:
  *   --recent      집계 구간을 "최근 8일"로 (주중 테스트용. 기본은 지난주 월~이번주 월)
  *   --send-empty  해당 항목이 없어도 메일 발송 (템플릿 확인용)
+ *   --only=이메일  그 한 명에게만 테스트 발송 (deliveries 미기록). 로컬에서 send 는 --only 없이는 거부됨
  */
 import { collectUpdates } from "../lib/collect";
 import { classifyPending } from "../lib/classify";
@@ -33,7 +34,14 @@ async function main() {
   }
   if (step === "all" || step === "collect") console.log("collect", await collectUpdates(since));
   if (step === "all" || step === "classify") console.log("classify", await classifyPending());
-  if (step === "all" || step === "send") console.log("send", await sendWeeklyDigests(new Date(), { sendEmpty: process.argv.includes("--send-empty"), recent: process.argv.includes("--recent") }));
+  if (step === "all" || step === "send") {
+    const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7);
+    if (!only && !process.argv.includes("--confirm-all")) {
+      console.error("전체 구독자 발송은 --confirm-all 을 붙여야 합니다. 한 명 테스트: --only=이메일");
+      process.exit(1);
+    }
+    console.log("send", await sendWeeklyDigests(new Date(), { sendEmpty: process.argv.includes("--send-empty"), recent: process.argv.includes("--recent"), only }));
+  }
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

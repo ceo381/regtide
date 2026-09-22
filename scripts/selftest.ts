@@ -207,6 +207,22 @@ async function main() {
     assert.ok(m!.html.includes("2026. 09. 14.") && m!.html.includes("2026. 09. 20."), "표시 기간은 지난주 월~일");
   });
 
+  await ok("테스트 발송(only): 지정한 한 명에게만 가고 deliveries 에 기록하지 않는다", async () => {
+    const before = db.tables.deliveries.length;
+    const n = sent.length;
+    const r = await sendWeeklyDigests(new Date("2026-09-21T00:05:00Z"), { sendEmpty: true, recent: true, only: "tester@company.kr" }, mailer);
+    assert.equal(r.sent, 1);
+    assert.equal(sent.length, n + 1);
+    assert.equal(sent[n].to, "tester@company.kr");
+    assert.ok(sent[n].subject.startsWith("[테스트]"));
+    assert.equal(db.tables.deliveries.length, before, "테스트 발송은 deliveries 에 기록되지 않아야 함");
+    // 기존 구독자 지정 시에도 그 한 명에게만
+    const r2 = await sendWeeklyDigests(new Date("2026-09-21T00:05:00Z"), { sendEmpty: true, recent: true, only: "GMP@company.kr" }, mailer);
+    assert.equal(r2.sent, 1);
+    assert.equal(sent[sent.length - 1].to, "gmp@company.kr");
+    assert.equal(db.tables.deliveries.length, before);
+  });
+
   console.log("\n[6] 구독 API 입력 검증");
   await ok("잘못된 입력은 400, 정상 입력은 저장된다", async () => {
     const { POST } = await import("@/app/api/subscribe/route");

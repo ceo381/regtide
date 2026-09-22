@@ -156,11 +156,24 @@ npx tsx --env-file=.env scripts/run-weekly.ts send --recent --send-empty
 
 ## G. 크론 엔드포인트·구독해지 확인
 
+### G-0. ★ 발송 안전장치 (구독자가 늘어난 뒤 필수 숙지)
+크론 엔드포인트는 `?step=` 로 단계를 고릅니다. **메일이 나가는 것은 `step=send` 와 `step` 생략(all) 두 경우만**이며, `collect`·`classify` 는 DB만 채웁니다.
+
+| 호출 | 결과 |
+|---|---|
+| `?step=collect`, `?step=classify` | 메일 없음. 언제든 안전 |
+| `?step=send&only=이메일` | **그 한 명에게만** 테스트 발송. 제목에 `[테스트]`, `deliveries` 미기록(월요일 정기 발송에 영향 없음). 구독자가 아닌 주소면 전체 규격을 선택한 가상 구독자로 렌더링 |
+| `?step=send` 또는 파라미터 없음 (수동 호출) | **거부(400)**. 전체 발송을 정말 원하면 `&confirm=all` 을 붙여야 함 |
+| Vercel Cron 의 자동 호출 | `confirm` 없이도 전체 발송 (User-Agent 로 구분) |
+
+로컬 스크립트도 동일: `run-weekly.ts send --only=이메일` 또는 `--confirm-all`.
+
 ### G-1. 크론 호출을 직접 흉내내기
 Vercel 이 매주 월요일 09:00(KST)에 `/api/cron/weekly` 로 보내는 요청과 같은 요청을 로컬에서 보냅니다. PowerShell 은 `curl` 이 다른 명령의 별칭이므로 반드시 `curl.exe`.
 ```powershell
-curl.exe -H "Authorization: Bearer test-secret-1234" "http://localhost:3000/api/cron/weekly?recent=1&sendEmpty=1"
+curl.exe -H "Authorization: Bearer test-secret-1234" "http://localhost:3000/api/cron/weekly?recent=1&sendEmpty=1&only=본인이메일"
 ```
+(`only` 를 빼면 G-0 의 안전장치가 거부합니다. 전체 발송 테스트는 `&confirm=all`.)
 **확인**: 10~40초 후 `"collect":{...}`, `"classify":{...}`, `"send":{...}` 세 부분이 담긴 JSON. 이미 이번 주 발송했다면 `send` 는 `skipped: 1` 이 정상.
 보안 확인: 헤더 없이 `curl.exe "http://localhost:3000/api/cron/weekly"` → `{"error":"unauthorized"}`.
 단계별 실행: `?step=collect` / `?step=classify` / `?step=send`.
