@@ -1,4 +1,4 @@
-import { ROADMAP_HEADLINE, ROADMAP_SUB, VOTE_TITLE } from "@/lib/roadmap";
+import { EMAIL_ROADMAP_HEADLINE, EMAIL_ROADMAP_SUB, EMAIL_VOTE_ASK, EMAIL_VOTE_DONE, EMAIL_VOTE_LINK, EMAIL_VOTE_LINK_NOTE } from "@/lib/roadmap";
 import { recentlyReleased, type VoteSummary } from "@/lib/votes";
 import { voteUrl as voteUrlFor } from "@/lib/vote-token";
 /**
@@ -54,8 +54,9 @@ export function forwardedNoticeHtml() {
 /**
  * 새 기능 소식 블록 — 주간 리포트·확인 메일 안에만 실린다 (별도 메일 없음, 처리방침 1항 고지 범위).
  *  - 최근 21일 안에 출시 표시된 투표 후보가 있으면 "여러분이 뽑은 기능이 열렸습니다"
- *  - 열린 라운드가 있으면 "다음 기능 투표 중" 링크
+ *  - 열린 라운드가 있으면 개인 투표 링크. 이미 투표한 구독자에게는 링크 대신 감사 문구
  *  - 요약이 없으면(상태 점검 렌더링·마이그레이션 전) 티저 문구만
+ *  문구는 구독자 대상(lib/roadmap.ts EMAIL_*) — 랜딩의 "지금 무료로 시작하세요" 류 권유는 쓰지 않는다
  */
 export function roadmapBlockHtml(now = new Date(), summary?: VoteSummary, subscriberId?: string) {
   const released = summary ? recentlyReleased(summary, now) : [];
@@ -63,8 +64,12 @@ export function roadmapBlockHtml(now = new Date(), summary?: VoteSummary, subscr
   const voteUrl = subscriberId && subscriberId !== "test" && subscriberId !== "health" ? voteUrlFor(siteUrl(), subscriberId) : `${siteUrl()}/#roadmap`;
   const lines: string[] = [];
   if (released.length) lines.push(`<p style="margin:0 0 6px;color:#101828;font-size:14px;font-weight:600">여러분이 뽑은 기능이 열렸습니다.</p><ul style="margin:0 0 8px;padding-left:18px;color:#344054;font-size:13px;line-height:1.6">${released.map((o) => `<li><strong>${esc(o.label)}</strong>${o.description ? ` <span style="color:#667085">— ${esc(o.description)}</span>` : ""}</li>`).join("")}</ul>`);
-  else lines.push(`<p style="margin:0 0 6px;color:#101828;font-size:14px;font-weight:600">${esc(ROADMAP_HEADLINE)}</p><p style="margin:0 0 8px;color:#475467;font-size:13px;line-height:1.6">${esc(ROADMAP_SUB)}</p>`);
-  if (open) lines.push(`<p style="margin:0;color:#344054;font-size:13px;line-height:1.6">${esc(VOTE_TITLE)} — <a href="${esc(voteUrl)}" style="color:#175cd3;font-weight:600">다음 기능 투표하기</a> (구독자 전용 링크, 30초)</p>`);
+  else lines.push(`<p style="margin:0 0 6px;color:#101828;font-size:14px;font-weight:600">${esc(EMAIL_ROADMAP_HEADLINE)}</p><p style="margin:0 0 8px;color:#475467;font-size:13px;line-height:1.6">${esc(EMAIL_ROADMAP_SUB)}</p>`);
+  if (open) {
+    const voted = !!subscriberId && open.voters.includes(subscriberId);
+    if (voted) lines.push(`<p style="margin:0;color:#344054;font-size:13px;line-height:1.6">${esc(EMAIL_VOTE_DONE)}</p>`);
+    else lines.push(`<p style="margin:0;color:#344054;font-size:13px;line-height:1.6">${esc(EMAIL_VOTE_ASK)}<br><a href="${esc(voteUrl)}" style="color:#175cd3;font-weight:600">${esc(EMAIL_VOTE_LINK)}</a> <span style="color:#667085">${esc(EMAIL_VOTE_LINK_NOTE)}</span></p>`);
+  }
   return `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 0"><tr><td style="padding:14px 16px;border:1px solid #eaecf0;border-radius:8px;background:#fcfcfd">${lines.join("")}</td></tr></table>`;
 }
 

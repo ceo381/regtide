@@ -9,7 +9,7 @@ export interface VoteOption { id: string; round_id: string; label: string; descr
 export interface SuggestionRow { id: string; round_id: string | null; message: string; ref: string | null; subscriber_id?: string | null; created_at: string }
 
 export interface VoteSummary {
-  open: (VoteRound & { options: (VoteOption & { count: number })[]; total: number; participants: number }) | null;
+  open: (VoteRound & { options: (VoteOption & { count: number })[]; total: number; participants: number; /** 이 라운드에 투표한 구독자 id (메일 블록의 "이미 투표함" 판정) */ voters: string[] }) | null;
   /** 출시 표시된 후보 (최근 순) — 랜딩 "출시된 기능" 이력, 메일 "여러분이 뽑은 기능이 열렸습니다" */
   released: (VoteOption & { round_title: string })[];
   closedRounds: (VoteRound & { options: (VoteOption & { count: number })[]; total: number; participants: number })[];
@@ -41,7 +41,8 @@ export async function loadVoteSummary(): Promise<VoteSummary> {
       .filter((o) => o.released_at)
       .sort((a, b) => (b.released_at ?? "").localeCompare(a.released_at ?? ""))
       .map((o) => ({ ...o, round_title: titleOf.get(o.round_id) ?? "" }));
-    return { open: openRound ? withCounts(openRound) : null, released, closedRounds };
+    const voters = openRound ? [...new Set(votes.filter((v) => v.round_id === openRound.id && v.subscriber_id).map((v) => v.subscriber_id as string))] : [];
+    return { open: openRound ? { ...withCounts(openRound), voters } : null, released, closedRounds };
   } catch {
     return EMPTY;
   }

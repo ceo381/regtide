@@ -105,7 +105,9 @@ export function makeExcerpt(u: Pick<UpdateRow, "raw" | "title" | "source">, max 
 export function classifyOne(u: UpdateRow): ClassifyOutput {
   // 1차: 제목 기준 명백한 비대상 문서 배제 (KR 피드에 식품·의약품이 섞여 있음)
   const excluded = u.jurisdiction === "KR" && EXCLUDE_TITLE.test(u.title) && !/의료기기|체외진단|디지털의료/.test(u.title);
-  const relevant = !excluded && INCLUDE_ANY.test(`${u.title} ${u.raw ?? ""}`);
+  // 의료기기안심책방(회수·행정처분)은 소스 자체가 의료기기 전용이므로 포함어 검사 없이 관련 항목으로 본다
+  const deviceOnlySource = u.source.startsWith("mfds_emedi:");
+  const relevant = deviceOnlySource || (!excluded && INCLUDE_ANY.test(`${u.title} ${u.raw ?? ""}`));
 
   const { ids, keywords } = relevant ? matchCatalog(u) : { ids: [], keywords: [] };
   const impact = decideImpact(u, ids.length > 0);

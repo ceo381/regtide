@@ -114,7 +114,7 @@ export const CATALOG: CatalogItem[] = [
     jurisdiction: "KR",
     label: "부작용 보고 · 회수 · 추적관리 · 재평가",
     description: "이상사례 보고, 회수·판매중지, 추적관리대상 의료기기, 재평가 관련 고시",
-    keywords: ["부작용", "이상사례", "회수", "판매중지", "추적관리", "재평가", "안전성 정보"],
+    keywords: ["부작용", "이상사례", "회수", "판매중지", "추적관리", "재평가", "안전성 정보", "행정처분", "업무정지", "허가취소", "판매업무정지"],
     sources: [...KR_SOURCES, "mfds_emedi:recall", "mfds_emedi:disps"],
   },
   {

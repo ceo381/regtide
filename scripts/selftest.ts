@@ -327,7 +327,7 @@ async function main() {
       assert.ok(!/\bAI\b|인공지능|자동 요약|생성형/.test(footer), "면책 문구에 AI 언급 금지");
       assert.ok(!m.html.includes("수신거부"), "'수신거부' 대신 '구독해지' 사용");
       assert.ok(m.html.includes("/?ref=fwd"), "전달 유입 링크(ref=fwd) 포함");
-      assert.ok(m.html.includes("인허가·품질 담당자의 일이 하나씩") || m.html.includes("여러분이 뽑은 기능이 열렸습니다."), "새 기능 소식 블록 포함");
+      assert.ok(m.html.includes("기능은 하나씩 늘어납니다") || m.html.includes("여러분이 뽑은 기능이 열렸습니다."), "새 기능 소식 블록 포함");
       // 규격 이름(EU AI Act, AI 의료기기 등)은 규제 대상이라 메일 본문에 나올 수 있음 — 금지 대상은 면책·안내 문구(위에서 검사)와 새 기능 블록
       const rmStart = Math.max(m.html.indexOf("인허가·품질 담당자의 일이 하나씩"), m.html.indexOf("여러분이 뽑은 기능이 열렸습니다."));
       const rm = m.html.slice(rmStart, m.html.indexOf("이 리포트가 도움이 되셨다면"));
@@ -600,7 +600,10 @@ async function main() {
     assert.equal(s.open!.total, 2); assert.equal(s.open!.participants, 1);
     // 메일 블록: 구독자별 링크
     let html = roadmapBlockHtml(new Date(), s, "voter1");
-    assert.ok(html.includes("/vote?s=voter1&amp;t=") && html.includes("다음 기능 투표하기") && !html.includes("여러분이 뽑은 기능이 열렸습니다."));
+    assert.ok(!html.includes("/vote?s=voter1") && html.includes("투표해 주셔서 감사합니다"), "이미 투표한 구독자에게는 링크 대신 감사 문구: " + html);
+    html = roadmapBlockHtml(new Date(), s, "voter2");
+    assert.ok(html.includes("/vote?s=voter2&amp;t=") && html.includes("다음 기능 투표하기") && !html.includes("여러분이 뽑은 기능이 열렸습니다."));
+    assert.ok(!html.includes("무료로 시작") && !html.includes("구독하고"), "메일 블록에는 랜딩용 구독 권유 문구가 없어야 함");
     assert.ok(!roadmapBlockHtml(new Date(), s, "health").includes("/vote?s="), "상태 점검 렌더링에는 개인 링크 없음");
     // 해지 시 투표·건의 함께 삭제 (cascade 를 흉내: 가짜 DB 는 cascade 가 없으므로 실제 스키마의 on delete cascade 를 문서로 보장. 여기서는 삭제 호출만 확인)
     // 닫힌 라운드에는 투표 불가, 출시 표시 반영
@@ -740,6 +743,13 @@ async function main() {
     const { CATALOG } = await import("@/lib/catalog");
     const vig = CATALOG.find((c) => c.id === "kr-vigilance")!;
     assert.ok(vig.sources.includes("mfds_emedi:recall") && vig.sources.includes("mfds_emedi:disps"));
+    // 분류: 제목에 "의료기기" 가 없어도(품목명·업체명뿐) 시판후 관리 규격으로 매칭되어야 리포트에 실린다
+    const { classifyOne } = await import("@/lib/classify");
+    const asRow = (u: typeof first) => ({ id: "x", source: u.source, external_id: u.externalId, jurisdiction: u.jurisdiction, title: u.title, url: u.url ?? null, published_at: null, raw: u.raw ?? null, summary_ko: null, impact: null, catalog_ids: [], matched_keywords: [], classified_at: null, created_at: "" });
+    const c1 = classifyOne(asRow(first) as never);
+    assert.ok(c1.catalog_ids.includes("kr-vigilance") && c1.impact !== "none", JSON.stringify(c1));
+    const c2 = classifyOne(asRow(dr[0]) as never);
+    assert.ok(c2.catalog_ids.includes("kr-vigilance") && c2.impact !== "none", JSON.stringify(c2));
   });
 
   globalThis.fetch = realFetch;

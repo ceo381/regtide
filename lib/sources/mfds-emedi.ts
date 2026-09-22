@@ -108,6 +108,7 @@ async function collect(spec: Spec, since: Date, http: EmediHttp, now = new Date(
   const start = kstDate(new Date(since.getTime() - spec.lookbackDays * 86400_000));
   const end = kstDate(new Date(now.getTime() + 86400_000));
   const rows: EmediRow[] = [];
+  const seenIds = new Set<string>();
   let total: number | null = null;
   // 첫 요청은 GET 으로 세션을 얻는다(필요 없는 경우에도 무해)
   try { await http.get(spec.listPath); } catch { /* 목록 POST 에서 다시 시도 */ }
@@ -120,7 +121,14 @@ async function collect(spec: Spec, since: Date, http: EmediHttp, now = new Date(
         throw new Error(`${spec.key}: 검색 결과 표를 해석하지 못함 (화면 구조 변경 가능성)`);
       }
     }
-    rows.push(...parsed.rows);
+    // 같은 페이지가 반복되면(페이징 파라미터 무시) 무한히 넘기지 않고 중단 + 경고
+    const fresh = parsed.rows.filter((r) => !seenIds.has(r.id));
+    if (page > 1 && parsed.rows.length && !fresh.length) {
+      warnings.push(`${spec.key}: ${page}페이지가 이전 페이지와 같음 — 페이징이 동작하지 않아 ${rows.length}건까지만 수집`);
+      break;
+    }
+    for (const r of fresh) seenIds.add(r.id);
+    rows.push(...fresh);
     const done = !parsed.rows.length || parsed.rows.length < PAGE_SIZE || (total != null && rows.length >= total);
     if (done) break;
     if (page === MAX_PAGES) warnings.push(`${spec.key}: ${MAX_PAGES}페이지 상한 도달 (총 ${total ?? "?"}건 중 ${rows.length}건)`);
@@ -161,6 +169,7 @@ export const RECALL_SPEC: Spec = {
     if (!product && !company) return null;
     const title = `[회수·판매중지] ${product || "품목명 미표기"} — ${company || "업체명 미표기"}`;
     const lines = [
+      "식약처 의료기기 회수·판매중지 공표 (의료기기안심책방)",
       `업체명: ${company}`, `품목명: ${product}`, permit ? `품목허가(인증·신고)번호: ${permit}` : "", kind ? `회수 구분: ${kind}` : "", status ? `회수 진행 여부: ${status}` : "", reported ? `보고일자: ${reported}` : "",
       d?.["회수사유"] ? `회수사유: ${d["회수사유"]}` : "", d?.["위해성정도"] ? `위해성정도: ${d["위해성정도"]}` : "", d?.["회수방법"] ? `회수방법: ${d["회수방법"]}` : "", d?.["소비자가 취해야 하는 행동"] ? `소비자가 취해야 하는 행동: ${d["소비자가 취해야 하는 행동"]}` : "",
     ].filter(Boolean);
@@ -174,7 +183,8 @@ export const DISPS_SPEC: Spec = {
   listPath: "/disps/MNU20266",
   idParam: "portalAdmDispsSeq",
   lookbackDays: 45, // 처분일 기준 검색이므로, 공개가 늦은 건을 놓치지 않도록 넉넉히
-  form: (start, end, page) => ({ pageNum: String(page), searchYn: "true", dispsStartDate: start, dispsEndDate: end, entpName: "", prdlNmCn: "", prdlNmNo: "", dispsName: "" }),
+  // searchYn=true 는 검색을 새로 시작해 항상 1페이지를 돌려주므로(실측), 2페이지부터는 비운다 (회수와 동일)
+  form: (start, end, page) => ({ pageNum: String(page), searchYn: page === 1 ? "true" : "", dispsStartDate: start, dispsEndDate: end, entpName: "", prdlNmCn: "", prdlNmNo: "", dispsName: "" }),
   detailPath: (id) => `/disps/view/MNU20266?portalAdmDispsSeq=${encodeURIComponent(id)}`,
   toItem(row, since, d) {
     const [, company, product, dispsShort, dispsDate, openDate] = row.cells;
@@ -185,6 +195,7 @@ export const DISPS_SPEC: Spec = {
     const disps = d?.["처분명"] || dispsShort;
     const title = `[행정처분] ${disps || "처분명 미표기"} — ${company}`;
     const lines = [
+      "식약처 의료기기 행정처분 공표 (의료기기안심책방)",
       `업체명: ${company}`, product && product !== "-" ? `제품명[허가번호]: ${product}` : "", d?.["업종명"] ? `업종: ${d["업종명"]}` : "", `처분명: ${disps}`, dispsDate ? `처분일자: ${dispsDate}` : "", d?.["처분기간"] ? `처분기간: ${d["처분기간"]}` : "", openDate ? `공개일자: ${openDate}` : "",
       d?.["위반법령"] ? `위반법령: ${d["위반법령"]}` : "", d?.["위반내용"] ? `위반내용: ${d["위반내용"]}` : "", d?.["처분내용"] ? `처분내용: ${d["처분내용"]}` : "",
     ].filter(Boolean);
