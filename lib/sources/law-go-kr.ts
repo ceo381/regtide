@@ -103,7 +103,11 @@ export const lawGoKrAdapter: SourceAdapter = {
     if (okCount === 0 && failures.length) {
       throw new Error(`국가법령정보 API 응답 없음 (${failures.length}건 실패, OC=${masked}, 길이 ${oc.length}). 첫 오류: ${failures[0]} — 브라우저에서 https://www.law.go.kr/DRF/lawSearch.do?OC=<OC>&target=law&type=JSON&query=의료기기 를 열어 OC 값을 확인하세요`);
     }
-    if (failures.length) console.warn(`[law_go_kr] 일부 질의 실패 ${failures.length}/${failures.length + okCount}:`, failures.slice(0, 3));
+    if (failures.length) {
+      // 일부만 실패해도 조용히 넘기지 않는다 — 특정 target(예: 행정규칙=식약처 고시) 전체가 빠질 수 있으므로 상태 점검에 경고로 올린다
+      console.warn(`[law_go_kr] 일부 질의 실패 ${failures.length}/${failures.length + okCount}:`, failures.slice(0, 3));
+      return { items: out, rawCount: out.length, warnings: [`국가법령정보 질의 ${failures.length}/${failures.length + okCount}건 실패 — ${failures[0]}`] };
+    }
     return out;
   },
 };

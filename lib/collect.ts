@@ -16,6 +16,8 @@ export interface CollectResult {
   /** 사이트 차단(403)·URL 변경(404) 등으로 건너뛴 소스. 파이프라인은 계속 진행됨 */
   skipped: { source: string; reason: string }[];
   errors: { source: string; error: string }[];
+  /** 어댑터가 부분 실패를 보고한 경우 (수집은 됐지만 일부 질의·페이지가 빠짐). 상태 점검에서 확인 등급 */
+  warnings?: { source: string; warning: string }[]; // 과거 저장분에는 없을 수 있음
 }
 
 /** DISABLED_SOURCES="page_watch:iso,law_go_kr" 처럼 콤마로 나열하면 해당 소스를 건너뜀 */
@@ -38,14 +40,14 @@ function withDeadline<T>(p: Promise<T>, label: string): Promise<T> {
 /** 모든 소스에서 since 이후 항목을 수집하여 updates 테이블에 신규 항목만 저장 */
 export async function collectUpdates(since: Date, adapters: SourceAdapter[] = defaultAdapters()): Promise<CollectResult> {
   const sb = supabaseAdmin();
-  const result: CollectResult = { fetched: 0, inserted: 0, bySource: {}, rawBySource: {}, skipped: [], errors: [] };
+  const result: CollectResult = { fetched: 0, inserted: 0, bySource: {}, rawBySource: {}, skipped: [], errors: [], warnings: [] };
   adapters = enabled(adapters);
 
   const settled = await Promise.allSettled(
     adapters.map(async (a) => {
       const r = await withDeadline(a.fetch(since), a.label);
-      const fr = isFetchResult(r) ? r : { items: r, rawCount: undefined, commit: undefined };
-      return { key: a.key, items: fr.items, rawCount: fr.rawCount ?? fr.items.length, commit: fr.commit };
+      const fr = isFetchResult(r) ? r : { items: r, rawCount: undefined, commit: undefined, warnings: undefined };
+      return { key: a.key, items: fr.items, rawCount: fr.rawCount ?? fr.items.length, commit: fr.commit, warnings: fr.warnings ?? [] };
     }),
   );
 
@@ -58,6 +60,7 @@ export async function collectUpdates(since: Date, adapters: SourceAdapter[] = de
       result.bySource[s.value.key] = (result.bySource[s.value.key] ?? 0) + s.value.items.length;
       result.rawBySource[s.value.key] = (result.rawBySource[s.value.key] ?? 0) + s.value.rawCount;
       if (s.value.commit) commits.push({ key: s.value.key, commit: s.value.commit });
+      for (const w of s.value.warnings) (result.warnings ??= []).push({ source: s.value.key, warning: w });
       return;
     }
     const e = s.reason;

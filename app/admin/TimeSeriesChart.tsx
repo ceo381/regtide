@@ -94,9 +94,10 @@ export default function TimeSeriesChart({ title, sub, days, series, height = 220
 }
 
 function niceTicks(max: number): number[] {
-  const raw = max / 4;
+  // 건수 데이터이므로 눈금은 정수 단위 이상
+  const raw = Math.max(1, max / 4);
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? mag * 10;
+  const step = Math.max(1, [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? mag * 10);
   const top = Math.ceil(max / step) * step;
   const out: number[] = [];
   for (let v = 0; v <= top; v += step) out.push(v);

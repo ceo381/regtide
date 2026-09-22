@@ -202,8 +202,8 @@ async function main() {
   });
   await ok("월요일 크론 시나리오: 수집 직후 발송하면 그 항목이 메일에 들어간다", async () => {
     const cronTime = new Date("2026-09-21T00:05:00Z");
-    // 크론 실행 중 저장된 항목(created_at = 크론 시각)
-    db.tables.updates.push({ id: "u-cron", source: "mfds_rss:data0005", external_id: "cron-1", jurisdiction: "KR", title: "의료기기 허가·신고·심사 등에 관한 규정 일부개정고시", url: "https://x", published_at: "2026-09-19T00:00:00Z", raw: null, summary_ko: "발췌", impact: "high", catalog_ids: ["kr-approval"], matched_keywords: ["허가·신고·심사"], classified_at: cronTime.toISOString(), created_at: cronTime.toISOString() });
+    // 크론 실행 중 저장된 항목(created_at > 크론 시작 시각)
+    db.tables.updates.push({ id: "u-cron", source: "mfds_rss:data0005", external_id: "cron-1", jurisdiction: "KR", title: "의료기기 허가·신고·심사 등에 관한 규정 일부개정고시", url: "https://x", published_at: "2026-09-19T00:00:00Z", raw: null, summary_ko: "발췌", impact: "high", catalog_ids: ["kr-approval"], matched_keywords: ["허가·신고·심사"], classified_at: cronTime.toISOString(), created_at: new Date(cronTime.getTime() + 30_000).toISOString() }); // 크론 시작보다 30초 뒤 저장 — 상한 없이 포함되어야 함
     db.tables.subscribers.push({ id: "s6", email: "cron@company.kr", unsubscribe_token: "tok6", active: true, products: [], catalog_ids: ["kr-approval"], last_sent_at: null });
     const before = sent.length;
     const r = await sendWeeklyDigests(cronTime, {}, mailer); // recent 옵션 없이 = 실제 크론과 동일
@@ -229,16 +229,19 @@ async function main() {
     assert.ok((row.update_ids as string[]).includes("u-wed") && !(row.update_ids as string[]).includes("u-cron"));
   });
 
-  await ok("배치 발송: sendBatch 로 묶어 보내고, 배치 실패 시 개별 발송으로 대체한다", async () => {
+  await ok("배치 발송: sendBatch 로 묶어 보내고(같은 멱등 키로 2회 시도), 모두 실패하면 개별 발송(구독자별 멱등 키)으로 대체한다", async () => {
     // 새 주(week) 로 가정하여 중복 방지 키를 피함
     const wk = new Date("2026-09-28T00:05:00Z");
     const batchCalls: number[] = [];
-    let failFirst = true;
+    const batchKeys: (string | undefined)[] = [];
+    const singleKeys: (string | undefined)[] = [];
+    let failLeft = 2;
     const batchMailer: Mailer = {
-      async send(m) { sent.push(m); return { id: `single_${sent.length}` }; },
-      async sendBatch(ms) {
+      async send(m, o) { sent.push(m); singleKeys.push(o?.idempotencyKey); return { id: `single_${sent.length}` }; },
+      async sendBatch(ms, o) {
         batchCalls.push(ms.length);
-        if (failFirst) { failFirst = false; throw new Error("batch boom"); }
+        batchKeys.push(o?.idempotencyKey);
+        if (failLeft > 0) { failLeft--; throw new Error("batch boom"); }
         ms.forEach((m) => sent.push(m));
         return ms.map((_, i) => ({ id: `batch_${i}` }));
       },
@@ -249,8 +252,12 @@ async function main() {
     const nActive = db.tables.subscribers.filter((x) => x.active).length;
     // 첫 호출: batch 실패 → 개별 발송으로 대체되어 활성 구독자 전원이 받음
     const r1 = await sendWeeklyDigests(wk, { sendEmpty: true, recent: true }, batchMailer);
-    assert.equal(batchCalls.length, 1);
+    assert.equal(batchCalls.length, 2, "같은 묶음을 2회 시도");
+    assert.ok(batchKeys[0] && batchKeys[0] === batchKeys[1], "재시도는 같은 멱등 키");
+    assert.ok(singleKeys.every((k) => k && k.startsWith("regtide:2026-09-28:")), "개별 발송은 구독자별 멱등 키");
+    assert.equal(new Set(singleKeys).size, singleKeys.length, "멱등 키는 구독자마다 다름");
     assert.equal(r1.sent, nActive);
+    assert.deepEqual(r1.recordErrors, []);
     assert.equal(r1.failed.length, 0);
     assert.equal(sent.length - before, nActive);
     const wkKey = wk.toISOString().slice(0, 10);

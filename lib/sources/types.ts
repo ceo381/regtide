@@ -27,6 +27,8 @@ export interface FetchResult {
   /** 수집 전 원본 건수(필터 전). 상태 점검의 "0건" 판정에 사용 */
   rawCount?: number;
   commit?: () => Promise<void>;
+  /** 일부 질의·페이지가 실패했지만 나머지는 성공한 경우의 경고. collect 가 상태 점검에 그대로 올린다 */
+  warnings?: string[];
 }
 /** 어댑터 반환값을 항목 배열로 정규화 (스크립트·테스트용) */
 export function itemsOf(v: RawUpdate[] | FetchResult): RawUpdate[] {

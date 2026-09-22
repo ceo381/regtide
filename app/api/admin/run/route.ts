@@ -54,9 +54,10 @@ export async function POST(req: NextRequest) {
       const sb = supabaseAdmin();
       if (action === "delete") {
         const { data: sub } = await sb.from("subscribers").select("id, email, ref, created_at, catalog_ids, products, last_sent_at").eq("id", id).maybeSingle();
-        if (sub) await recordUnsubscribe(sub as ChurnSource, "admin");
+        const { count: received } = await sb.from("deliveries").select("id", { count: "exact", head: true }).eq("subscriber_id", id).eq("status", "sent");
         const { error } = await sb.from("subscribers").delete().eq("id", id);
         if (error) throw error;
+        if (sub) await recordUnsubscribe(sub as ChurnSource, "admin", new Date(), received ?? null);
         return back("구독자를 삭제했습니다.");
       }
       const { error } = await sb.from("subscribers").update({ active: false, updated_at: new Date().toISOString() }).eq("id", id);

@@ -35,12 +35,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(out);
     }
     if (req.nextUrl.searchParams.get("skipCollect") !== "1") {
+      // 수집과 분류를 따로 감싼다 — 수집이 실패해도 어제 수집분 분류는 진행, 둘 다 실패해도 리포트는 발송
       try {
         out.collect = await collectUpdates(new Date(now.getTime() - COLLECT_LOOKBACK_DAYS * 86400_000));
+      } catch (e) {
+        out.collectError = String((e as Error).message ?? e);
+      }
+      try {
         out.classify = await classifyAll();
       } catch (e) {
-        // 수집이 실패해도 리포트는 보내야 운영자가 알 수 있다
-        out.collectError = String((e as Error).message ?? e);
+        out.classifyError = String((e as Error).message ?? e);
       }
     }
     out.milestone = await notifyMilestoneIfReached();

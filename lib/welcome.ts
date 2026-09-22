@@ -64,7 +64,7 @@ export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; no
         <p style="margin:6px 0 0;color:#101828;font-size:14px;line-height:1.7">
           <strong>매주 월요일 09:00 KST</strong> 에 지난 한 주의 변경 사항을 한 통으로 보내드립니다.<br>
           첫 리포트 예정: <strong>${fmtKst(firstSend)}</strong><br>
-          <span style="color:#667085;font-size:13px">첫 리포트에는 최근 ${CANDIDATE_DAYS}일 안에 수집된 항목 중 선택하신 규격·인증에 해당하는 것이 함께 실립니다. 해당 항목이 없는 주에는 메일을 보내지 않습니다.</span>
+          <span style="color:#667085;font-size:13px">첫 리포트에는 최근 ${CANDIDATE_DAYS}일 안에 수집된 항목 중 선택하신 규격·인증에 해당하는 것이 함께 실립니다. 해당 항목이 없는 주에도 "이번 주 변경 없음"으로 짧게 안내드려, 모니터링이 계속되고 있음을 확인하실 수 있습니다.</span>
         </p>
       </td></tr></table>
 
@@ -78,7 +78,7 @@ export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; no
       <p style="margin:0;color:#475467;font-size:13px;line-height:1.7">${COVERAGE.map((c) => `<strong style="color:#344054">${esc(c.country)}</strong> — ${esc(c.agencies)}`).join("<br>")}</p>
       <p style="margin:12px 0 0;color:#667085;font-size:13px;line-height:1.7">품목이나 규격을 바꾸려면 <a href="${esc(site)}" style="color:#175cd3">구독 페이지</a>에서 같은 이메일로 다시 신청하시면 됩니다. 기존 설정이 새 내용으로 바뀝니다.<br>같은 팀 동료에게도 필요하다면 이 링크를 전달해 주세요: <a href="${esc(forwardUrl())}" style="color:#175cd3">${esc(forwardUrl())}</a></p>
 
-      <p style="margin:16px 0 0;color:#98a2b3;font-size:12px;line-height:1.6">이 메일은 구독 신청 확인을 위해 신청하신 주소로 1회 발송됩니다. 이후에는 매주 월요일 리포트 외의 메일을 보내지 않습니다.</p>
+      <p style="margin:16px 0 0;color:#98a2b3;font-size:12px;line-height:1.6">이 메일은 구독 신청 확인을 위해 신청하신 주소로 1회 발송됩니다. 이후에는 매주 월요일 리포트 외의 메일을 보내지 않습니다.<br>본인이 신청하지 않으셨다면 아래 구독해지 링크를 눌러 확인 화면에서 해지해 주세요. 이메일 주소가 즉시 삭제되며 더 이상 메일이 가지 않습니다.</p>
 
       <hr style="border:0;border-top:1px solid #eaecf0;margin:24px 0 16px">
       ${disclaimerFooterHtml(sub.unsubscribe_token, "RegTide 가 보내드리는 리포트는")}

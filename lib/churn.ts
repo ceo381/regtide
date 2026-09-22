@@ -47,12 +47,19 @@ export function anonymizeForChurn(sub: ChurnSource, reason: "user" | "admin", de
   };
 }
 
-/** 삭제 직전에 호출. 발송 이력 수를 세고 익명 통계 행을 저장 */
-export async function recordUnsubscribe(sub: ChurnSource, reason: "user" | "admin", now = new Date()): Promise<{ ok: boolean; error?: string }> {
+/**
+ * 구독자 행 삭제 **후** 호출 (삭제가 실패하면 통계도 남기지 않도록). 받은 리포트 수는 삭제 전에 세어 넘긴다.
+ * deliveriesReceived 를 생략하면 여기서 세어 보지만, 삭제 뒤라면 0 이 나오므로 호출 측에서 넘기는 것이 맞다.
+ */
+export async function recordUnsubscribe(sub: ChurnSource, reason: "user" | "admin", now = new Date(), deliveriesReceived?: number | null): Promise<{ ok: boolean; error?: string }> {
   try {
     const sb = supabaseAdmin();
-    const { count } = await sb.from("deliveries").select("id", { count: "exact", head: true }).eq("subscriber_id", sub.id).eq("status", "sent");
-    const row = anonymizeForChurn(sub, reason, count ?? null, now);
+    let received = deliveriesReceived;
+    if (received === undefined) {
+      const { count } = await sb.from("deliveries").select("id", { count: "exact", head: true }).eq("subscriber_id", sub.id).eq("status", "sent");
+      received = count ?? null;
+    }
+    const row = anonymizeForChurn(sub, reason, received, now);
     const { error } = await sb.from("unsubscribes").insert(row);
     if (error) return { ok: false, error: error.message };
     return { ok: true };

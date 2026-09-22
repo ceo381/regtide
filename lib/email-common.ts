@@ -15,7 +15,7 @@ const PRETENDARD_CSS = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.
 export const EMAIL_HEAD = `<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${PRETENDARD_CSS}"><style>@import url("${PRETENDARD_CSS}");body,td,p,a,h1,h2,h3,span,strong,li{font-family:${EMAIL_FONT} !important}</style></head>`;
 
 export function siteUrl() {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  return (process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/+$/, "");
 }
 
 export function unsubscribeUrl(token: string) {

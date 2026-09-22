@@ -20,6 +20,9 @@ function limited(ip: string) {
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   if (limited(ip)) return NextResponse.json({ ok: false }, { status: 429 });
+  // 사이트 자체 페이지에서 온 요청만 집계 (다른 사이트·curl 로 부풀리기 방지). 브라우저는 Sec-Fetch-Site 를 자동으로 붙인다
+  const fetchSite = req.headers.get("sec-fetch-site");
+  if (fetchSite && fetchSite !== "same-origin") return NextResponse.json({ ok: false }, { status: 403 });
   const body = (await req.json().catch(() => null)) as { ref?: unknown; referrer?: unknown } | null;
   const ref = typeof body?.ref === "string" ? body.ref.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) : "";
   const referrer = typeof body?.referrer === "string" ? body.referrer.replace(/[^a-z0-9.\-:]/gi, "").slice(0, 120) : "";

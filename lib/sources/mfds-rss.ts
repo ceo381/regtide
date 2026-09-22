@@ -43,7 +43,8 @@ export function mfdsRssAdapter(brdId: string): SourceAdapter {
         if (pub && !isNaN(pub.getTime()) && pub < since) continue;
         const body = stripHtml(text(it["content:encoded"]) || text(it.description));
         // 고시/입법예고 피드는 식품·의약품도 섞여 있으므로 의료기기 관련 항목만 통과
-        if (!MEDICAL_DEVICE_HINT.test(title + " " + body.slice(0, 500))) continue;
+        // 본문 전체를 검사 (앞 500자만 보면 뒤쪽에서만 의료기기를 언급하는 통합 고시를 놓친다)
+        if (!MEDICAL_DEVICE_HINT.test(title + " " + body)) continue;
         out.push({
           source: key,
           externalId: link,

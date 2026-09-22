@@ -3,7 +3,7 @@ import { consecutiveZeroRuns, enabled, everHadItems, type LastCollect } from "@/
 import { describeSource } from "@/lib/source-info";
 import { renderDigestHtml } from "@/lib/digest";
 import { renderWelcomeHtml } from "@/lib/welcome";
-import { supabaseAdmin, type SubscriberRow } from "@/lib/supabase";
+import { mailFrom, supabaseAdmin, type SubscriberRow } from "@/lib/supabase";
 
 /**
  * 상태 점검 — 운영자가 대시보드 최상단·일일 리포트에서 "문제가 있는가"를 한눈에 보게 한다.
@@ -76,6 +76,7 @@ export function checkCollection(last: LastCollect | null, now = new Date()): Hea
 
   for (const e of last.errors ?? []) issues.push({ level: "critical", area: "수집", title: `소스 오류: ${describeSource(e.source).agency}`, detail: `${e.source} — ${e.error}`, action: "오류 메시지대로 소스 어댑터 점검" });
   for (const s of last.skipped ?? []) issues.push({ level: "warning", area: "수집", title: `소스 건너뜀: ${s.source}`, detail: s.reason, action: "차단(403)이 지속되면 DISABLED_SOURCES 로 명시적으로 끄고 대체 소스 검토" });
+  for (const w of last.warnings ?? []) issues.push({ level: "warning", area: "수집", title: `소스 부분 실패: ${describeSource(w.source).agency}`, detail: `${w.source} — ${w.warning}`, action: "일부 질의만 실패해도 해당 구분(예: 행정규칙) 항목이 통째로 빠질 수 있음. 다음 수집에서도 반복되면 어댑터 점검" });
 
   // 활성 어댑터 중 마지막 수집 결과에 아예 없는 소스 (코드에 있는데 실행되지 않음)
   const expected = [...new Set(enabled(allAdapters()).map((a) => a.key))];
@@ -107,10 +108,11 @@ export async function checkDataAndDelivery(now = new Date()): Promise<HealthIssu
   const weekStart = monday.toISOString().slice(0, 10);
   const dayAgo = new Date(now.getTime() - 24 * HOURS).toISOString();
 
-  const [unclassifiedQ, activeQ, delsQ] = await Promise.all([
+  const [unclassifiedQ, activeQ, delsQ, sentThisWeekQ] = await Promise.all([
     sb.from("updates").select("id", { count: "exact", head: true }).is("classified_at", null).lt("created_at", dayAgo),
     sb.from("subscribers").select("id", { count: "exact", head: true }).eq("active", true),
     sb.from("deliveries").select("status, error").eq("week_start", weekStart),
+    sb.from("subscribers").select("id", { count: "exact", head: true }).gte("last_sent_at", monday.toISOString()),
   ]);
   const unclassified = unclassifiedQ.count ?? 0;
   if (unclassified > 0) issues.push({ level: "warning", area: "수집", title: `분류되지 않은 항목 ${unclassified}건`, detail: "수집 후 24시간이 지났는데 분류가 안 된 항목이 있습니다. 분류가 안 되면 메일에 실리지 않습니다.", action: "대시보드 운영 작업 → 분류 실행" });
@@ -121,6 +123,12 @@ export async function checkDataAndDelivery(now = new Date()): Promise<HealthIssu
   if (failed.length) {
     const reasons = [...new Set(failed.map((f) => f.error ?? "").filter(Boolean))].slice(0, 2).join(" / ");
     issues.push({ level: "critical", area: "발송", title: `이번 주 발송 실패 ${failed.length}건`, detail: reasons || "원인 미기록", action: "발송 기록 탭에서 오류 확인. 실패 건은 다음 크론에서 자동 재시도" });
+  }
+  // 발송 기록 정합성: last_sent_at 이 이번 주로 갱신된 구독자 수 > deliveries sent 행 수 → 기록 누락 (재실행 시 중복 발송 위험)
+  const sentRows = dels.filter((d) => d.status === "sent").length;
+  const sentMarked = sentThisWeekQ.count ?? 0;
+  if (sentMarked > sentRows) {
+    issues.push({ level: "critical", area: "발송", title: `발송 기록 불일치: 발송 표시 ${sentMarked}명 vs 기록 ${sentRows}건`, detail: "메일은 나갔는데 deliveries 기록이 빠진 구독자가 있습니다. 이 상태에서 주간 발송을 재실행하면 그 구독자는 같은 메일을 또 받습니다(멱등 키로 Resend 가 막아주지만 같은 주 안에서만).", action: "Vercel Logs 의 'deliveries upsert failed' 확인 후 원인 해결 전에는 수동 재발송 금지" });
   }
   // 월요일 12:00 KST 이후인데 이번 주 발송 기록이 하나도 없으면 크론 미실행 (Hobby 크론은 최대 1시간 지연 가능)
   const mondayNoonKst = new Date(monday.getTime() + 12 * HOURS - 9 * HOURS);
@@ -141,7 +149,7 @@ export async function checkDataAndDelivery(now = new Date()): Promise<HealthIssu
   if (active + 5 >= limit) {
     issues.push({ level: active >= limit ? "critical" : "warning", area: "발송", title: `구독자 ${active}명 — 메일 일일 한도(${limit}통) 근접/초과`, detail: "Resend 무료 플랜은 하루 100통입니다. 한도를 넘으면 월요일 발송이 중간에 끊깁니다.", action: "Resend Pro 업그레이드 후 Vercel 에 RESEND_DAILY_LIMIT=50000 설정" });
   }
-  if ((process.env.MAIL_FROM ?? "").includes("resend.dev")) {
+  if (mailFrom().includes("resend.dev")) {
     issues.push({ level: "critical", area: "발송", title: "발신 주소가 테스트용(onboarding@resend.dev)", detail: "Resend 테스트 모드에서는 운영자 본인 주소로만 발송됩니다. 구독자에게는 전부 실패합니다.", action: "도메인 인증 후 MAIL_FROM 을 인증 도메인 주소로 변경" });
   }
   return issues;

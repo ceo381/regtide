@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { createHash } from "node:crypto";
 import { CATALOG, CATALOG_BY_ID, JURISDICTION_LABEL, productLabel, type Jurisdiction } from "@/lib/catalog";
 import { mailFrom, selectAll, supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { COVERAGE, describeSource, sourcesUsed } from "@/lib/source-info";
@@ -166,26 +167,30 @@ export interface SendResult {
   sent: number;
   skipped: number;
   failed: { email: string; error: string }[];
+  /** 메일은 나갔지만 deliveries/last_sent_at 기록에 실패한 건 — 비어 있지 않으면 재실행 시 중복 발송 위험. 상태 점검이 표시 */
+  recordErrors: string[];
 }
 
 /** 메일 발송 추상화 (테스트에서 가짜 발송기 주입용) */
 export interface MailMessage { from: string; to: string; subject: string; html: string }
+export interface SendOpts { idempotencyKey?: string }
 export interface Mailer {
-  send(msg: MailMessage): Promise<{ id?: string }>;
+  send(msg: MailMessage, opts?: SendOpts): Promise<{ id?: string }>;
   /** 여러 통을 한 번의 API 호출로 발송 (Resend batch, 최대 100통). 없으면 send 를 반복 호출 */
-  sendBatch?(msgs: MailMessage[]): Promise<{ id?: string }[]>;
+  sendBatch?(msgs: MailMessage[], opts?: SendOpts): Promise<{ id?: string }[]>;
 }
 
 export function resendMailer(): Mailer {
   const resend = new Resend(process.env.RESEND_API_KEY);
   return {
-    async send(msg) {
-      const { data, error } = await resend.emails.send(msg);
+    async send(msg, opts) {
+      // Idempotency-Key: 같은 키로 재요청하면 Resend 가 중복 발송하지 않음 (네트워크 오류 후 재시도 안전)
+      const { data, error } = await resend.emails.send(msg, opts?.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : undefined);
       if (error) throw new Error(error.message);
       return { id: data?.id };
     },
-    async sendBatch(msgs) {
-      const { data, error } = await resend.batch.send(msgs);
+    async sendBatch(msgs, opts) {
+      const { data, error } = await resend.batch.send(msgs, opts?.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : undefined);
       if (error) throw new Error(error.message);
       // SDK 버전에 따라 data 가 { data: [...] } 또는 [...] 형태
       const arr = (Array.isArray(data) ? data : (data as { data?: { id: string }[] } | null)?.data) ?? [];
@@ -212,7 +217,7 @@ export async function sendWeeklyDigests(
   const { start, end, weekStart, periodStart, periodEnd } = weekWindow(now, { recent: opts.recent });
 
   const updates = await selectAll<UpdateRow>(() =>
-    sb.from("updates").select("*").not("classified_at", "is", null).gte("created_at", start.toISOString()).lte("created_at", end.toISOString()).order("created_at", { ascending: true }).order("id", { ascending: true }),
+    sb.from("updates").select("*").not("classified_at", "is", null).gte("created_at", start.toISOString()).order("created_at", { ascending: true }).order("id", { ascending: true }),
   );
   let subs = await selectAll<SubscriberRow>(() => sb.from("subscribers").select("*").eq("active", true).order("created_at", { ascending: true }).order("id", { ascending: true }));
 
@@ -233,7 +238,10 @@ export async function sendWeeklyDigests(
   }
 
   const from = mailFrom();
-  const result: SendResult = { sent: 0, skipped: 0, failed: [] };
+  const result: SendResult = { sent: 0, skipped: 0, failed: [], recordErrors: [] };
+  // 멱등 키: 주(week_start) + 구독자 → 같은 주에 같은 사람에게는 재시도해도 한 번만 발송. 테스트 발송은 키 없음(매번 받아야 함)
+  const idemKey = (subId: string) => (testOnly ? undefined : `regtide:${weekStart}:${subId}`);
+  const batchKey = (ids: string[]) => (testOnly ? undefined : `regtide:${weekStart}:batch:${createHash("sha1").update(ids.join(",")).digest("hex").slice(0, 24)}`);
   const nowIso = () => new Date().toISOString();
 
   // 발송 기록을 한 번에 조회 (구독자 수만큼 쿼리하지 않도록)
@@ -259,7 +267,10 @@ export async function sendWeeklyDigests(
     const { error } = await sb
       .from("deliveries")
       .upsert(rows.map((r) => ({ week_start: weekStart, sent_at: nowIso(), ...r })), { onConflict: "subscriber_id,week_start" });
-    if (error) console.error("[digest] deliveries upsert failed:", error.message);
+    if (error) {
+      console.error("[digest] deliveries upsert failed:", error.message);
+      result.recordErrors.push(`deliveries 기록 실패 (${rows.length}건): ${error.message}`);
+    }
   };
 
   // 1) 구독자별 메시지 준비
@@ -307,7 +318,7 @@ export async function sendWeeklyDigests(
       };
       const sendOne = async (j: Job) => {
         try {
-          markSent(j, (await mailer.send(j.msg)).id);
+          markSent(j, (await mailer.send(j.msg, { idempotencyKey: idemKey(j.sub.id) })).id);
         } catch (e) {
           const msg = String((e as Error).message ?? e);
           failedRows.push({ subscriber_id: j.sub.id, update_ids: j.mine.map((u) => u.id), status: "failed", error: msg });
@@ -317,20 +328,25 @@ export async function sendWeeklyDigests(
 
       let batched = false;
       if (useBatch) {
-        try {
-          const rs = await mailer.sendBatch!(chunk.map((j) => j.msg));
-          chunk.forEach((j, k) => markSent(j, rs[k]?.id));
-          batched = true;
-        } catch (e) {
-          console.error("[digest] batch send failed, falling back to single sends:", (e as Error).message);
+        // 같은 멱등 키로 최대 2회 시도 — 첫 시도가 접수됐는데 응답만 유실된 경우에도 Resend 가 중복 발송하지 않음
+        const key = batchKey(chunk.map((j) => j.sub.id));
+        for (let attempt = 0; attempt < 2 && !batched; attempt++) {
+          try {
+            const rs = await mailer.sendBatch!(chunk.map((j) => j.msg), { idempotencyKey: key });
+            chunk.forEach((j, k) => markSent(j, rs[k]?.id));
+            batched = true;
+          } catch (e) {
+            console.error(`[digest] batch send failed (attempt ${attempt + 1}/2):`, (e as Error).message);
+          }
         }
+        if (!batched) console.error("[digest] batch 2회 실패 — 개별 발송으로 대체 (개별 멱등 키 사용)");
       }
       if (!batched) for (const j of chunk) await sendOne(j);
 
       await recordMany([...sentRows, ...failedRows]);
       if (!testOnly && sentIds.length) {
         const { error } = await sb.from("subscribers").update({ last_sent_at: nowIso() }).in("id", sentIds);
-        if (error) console.error("[digest] last_sent_at update failed:", error.message);
+        if (error) { console.error("[digest] last_sent_at update failed:", error.message); result.recordErrors.push(`last_sent_at 갱신 실패: ${error.message}`); }
       }
     }
   } finally {

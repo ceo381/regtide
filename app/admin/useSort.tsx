@@ -46,9 +46,14 @@ export function useSort<T>(rows: T[], cols: Record<string, (r: T) => SortVal>, i
   const toggle = (key: string) =>
     setSort((s) => {
       const first = defaultDir(rows, cols[key]);
-      if (!s || s.key !== key) return { key, dir: first }; // 1회: 기본 방향
-      if (s.dir === first) return { key, dir: first === "asc" ? "desc" : "asc" }; // 2회: 반대 방향
-      return initial && initial.key !== key ? initial : null; // 3회: 초기 정렬로 복귀
+      const flip = (d: SortDir): SortDir => (d === "asc" ? "desc" : "asc");
+      if (!s || s.key !== key) return { key, dir: first }; // 다른 열 → 기본 방향
+      if (initial && initial.key === key) {
+        // 초기 정렬 열: 초기 방향 → 반대 방향 → 초기 방향 (해제 없음)
+        return s.dir === initial.dir ? { key, dir: flip(initial.dir) } : initial;
+      }
+      if (s.dir === first) return { key, dir: flip(first) }; // 2회: 반대 방향
+      return initial ?? null; // 3회: 초기 정렬로 복귀
     });
 
   const th = (key: string, label: ReactNode, opts: { num?: boolean; title?: string; className?: string } = {}) => {

@@ -16,7 +16,6 @@ export const metadata: Metadata = {
     "의료기기 인허가", "의료기기 RA", "의료기기 QA", "MDR 개정", "EU MDR", "IVDR", "MDCG 가이던스", "FDA 의료기기 규제", "Federal Register FDA",
     "ISO 13485", "IEC 60601", "ISO 14971", "규제 모니터링", "의료기기 뉴스레터",
   ],
-  alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     locale: "ko_KR",

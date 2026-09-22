@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "이용 안내 및 면책조항" };
+export const metadata = { title: "이용 안내 및 면책조항", alternates: { canonical: "/disclaimer" } };
 
 export default function Disclaimer() {
   return (

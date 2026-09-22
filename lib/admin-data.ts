@@ -164,7 +164,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     collectAdminStats(now),
     selectAll<DashboardData["subscribers"][number]>(() => sb.from("subscribers").select("*").order("created_at", { ascending: false }).order("id", { ascending: true })).then((data) => ({ data, error: null as null })),
     sb.from("updates").select("*").order("created_at", { ascending: false }).limit(60),
-    sb.from("deliveries").select("subscriber_id, status, sent_at, error, update_ids").eq("week_start", weekStart).order("sent_at", { ascending: false }),
+    selectAll<{ subscriber_id: string; status: string; sent_at: string; error: string | null; update_ids: string[] }>(() => sb.from("deliveries").select("subscriber_id, status, sent_at, error, update_ids").eq("week_start", weekStart).order("sent_at", { ascending: false }).order("id", { ascending: true })).then((data) => ({ data, error: null as null })),
     listChannels().catch(() => [] as ChannelRow[]), // channels 테이블이 아직 없으면 빈 목록
     // 유입(방문): 전체 건수는 count 로, 일별·채널별 계산은 최근 14일 행으로. 테이블이 없으면(마이그레이션 전) null
     Promise.all([

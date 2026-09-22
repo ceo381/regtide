@@ -236,7 +236,7 @@ export default function SubscribeForm() {
             <span className="step">2</span>주간 업데이트 이메일 받기
           </h2>
           <p className="sub">
-            선택한 총 <strong>{totalIds.size}개</strong> 규격·인증의 변경 사항을 매주 월요일 오전 9시(KST)에 원문 발췌와 링크로 보내드립니다. 해당 항목이 없는 주에는 메일을 보내지 않습니다.
+            선택한 총 <strong>{totalIds.size}개</strong> 규격·인증의 변경 사항을 매주 월요일 오전 9시(KST)에 원문 발췌와 링크로 보내드립니다. 변경이 없는 주에는 "이번 주 변경 없음"으로 짧게 안내드립니다.
           </p>
           <label htmlFor="email">이메일 주소</label>
           <input id="email" type="email" required placeholder="ra@company.co.kr" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
@@ -249,7 +249,8 @@ export default function SubscribeForm() {
               <li>자동 수집: 서비스 안내 링크(?ref=)로 접속한 경우 유입 경로 코드·최초 접속 시각, 접속 통계(방문 시각·유입 경로 코드·이전 페이지 호스트 — IP·쿠키·방문자 식별값 없음) (채널별 효과 측정 통계 목적)</li>
               <li>수집 목적: 구독 신청 확인 메일 발송(1회), 규제 업데이트 주간 리포트 이메일 발송, 구독해지 처리</li>
               <li>보유 기간: 구독해지(구독 해지) 시까지. 해지 즉시 삭제됩니다.</li>
-              <li>제3자 제공: 없음. 단, 이메일 발송을 위해 발송 대행 서비스(Resend)에 처리를 위탁합니다.</li>
+              <li>제3자 제공: 없음. 처리 위탁: 데이터베이스 호스팅(Supabase), 이메일 발송 대행(Resend), 웹 호스팅(Vercel) — 국외 사업자이며 자세한 내용은 처리방침 4·4-1항</li>
+              <li>구독 정보(이메일·품목·규격)는 운영자가 서비스 운영 현황 확인 목적으로 내부에서 열람합니다</li>
               <li>동의를 거부할 수 있으며, 거부 시 서비스 이용이 불가합니다.</li>
             </ul>
             <div style={{ marginTop: 6 }}>
