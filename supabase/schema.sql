@@ -100,3 +100,20 @@ create table if not exists visits (
 create index if not exists visits_landed_idx on visits(landed_at desc);
 create index if not exists visits_ref_idx on visits(ref);
 alter table visits enable row level security;
+
+-- 2026-09-22: 구독해지 통계 — 해지 시 식별 정보(이메일·id·토큰)는 삭제하고, 식별 불가 통계만 남긴다
+create table if not exists unsubscribes (
+  id uuid primary key default gen_random_uuid(),
+  unsubscribed_at timestamptz not null default now(),
+  reason text not null default 'user',       -- user(구독자 본인 해지) / admin(운영자 삭제)
+  ref text,                                  -- 유입 채널 코드
+  subscribed_at timestamptz,                 -- 구독 시작 시각
+  tenure_days int,                           -- 구독 기간(일)
+  catalog_count int,                         -- 선택했던 규격·인증 수
+  categories text[],                         -- 품목 등급·유형 (품목명 없음)
+  deliveries_received int,                   -- 받은 리포트 수
+  last_sent_at timestamptz,                  -- 마지막 리포트 수신 시각
+  mail_type text                             -- company / personal (도메인 자체는 저장하지 않음)
+);
+create index if not exists unsubscribes_at_idx on unsubscribes(unsubscribed_at desc);
+alter table unsubscribes enable row level security;

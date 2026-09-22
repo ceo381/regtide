@@ -41,6 +41,9 @@ export interface AdminStats {
   multiSeatDomains: { domain: string; count: number }[];
   companyDomains: number; // 회사 도메인 수 (개인 메일 제외)
   personalMailCount: number;
+  /** 최근 24시간 / 7일 구독해지 (unsubscribes 테이블). 테이블 없으면 null */
+  unsubscribes24h: number | null;
+  unsubscribes7d: number | null;
   health?: HealthReport;
 }
 
@@ -63,13 +66,16 @@ export async function collectAdminStats(now = new Date(), hours = 24): Promise<A
   const monday = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() - ((kst.getUTCDay() + 6) % 7)));
 
   // 모든 조회를 병렬로 (Vercel ↔ Supabase 왕복을 1회로 줄임)
-  const [totalActive, newSubsQ, upsQ, delsQ, allSubsQ, lastCollect] = await Promise.all([
+  const weekAgo = new Date(now.getTime() - 7 * 86400_000).toISOString();
+  const [totalActive, newSubsQ, upsQ, delsQ, allSubsQ, lastCollect, unsub24, unsub7] = await Promise.all([
     countActiveSubscribers(),
     sb.from("subscribers").select("*").gte("created_at", since).order("created_at", { ascending: false }),
     sb.from("updates").select("jurisdiction,catalog_ids").gte("created_at", since),
     sb.from("deliveries").select("status").gte("week_start", monday.toISOString().slice(0, 10)),
     selectAll<{ email: string; catalog_ids: string[] }>(() => sb.from("subscribers").select("email, catalog_ids").eq("active", true).order("created_at", { ascending: true }).order("id", { ascending: true })).then((data) => ({ data, error: null as null })),
     readLastCollect().catch(() => null),
+    sb.from("unsubscribes").select("id", { count: "exact", head: true }).gte("unsubscribed_at", since).then((r) => (r.error ? null : r.count ?? 0), () => null),
+    sb.from("unsubscribes").select("id", { count: "exact", head: true }).gte("unsubscribed_at", weekAgo).then((r) => (r.error ? null : r.count ?? 0), () => null),
   ]);
   if (newSubsQ.error) throw newSubsQ.error;
   if (upsQ.error) throw upsQ.error;
@@ -105,7 +111,7 @@ export async function collectAdminStats(now = new Date(), hours = 24): Promise<A
     .map(([id, count]) => ({ id, label: CATALOG_BY_ID[id]?.label ?? id, count }));
 
   const health = await computeHealth(lastCollect, now).catch(() => undefined);
-  return { now, totalActive, newSubscribers: (newSubsQ.data ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect, multiSeatDomains, companyDomains, personalMailCount, health };
+  return { now, totalActive, newSubscribers: (newSubsQ.data ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect, multiSeatDomains, companyDomains, personalMailCount, unsubscribes24h: unsub24, unsubscribes7d: unsub7, health };
 }
 
 export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: string }) {
@@ -137,6 +143,7 @@ export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: str
     <table style="border-collapse:collapse;font-size:15px;margin-bottom:16px">
       ${row("활성 구독자", `${s.totalActive}명`)}
       ${row("최근 24시간 신규 구독", `${s.newSubscribers.length}명`)}
+      ${row("구독해지", s.unsubscribes24h == null ? "집계 전 (unsubscribes 테이블 필요)" : `24시간 ${s.unsubscribes24h}명 · 7일 ${s.unsubscribes7d ?? 0}명`)}
       ${row("최근 24시간 수집", updLine)}
       ${row("이번 주 발송", delLine)}
       ${row("구독자 구성", `회사 도메인 ${s.companyDomains}곳 · 개인 메일 ${s.personalMailCount}명`)}

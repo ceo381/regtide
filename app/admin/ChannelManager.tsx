@@ -29,8 +29,9 @@ export interface ChannelView {
   visits: string; // "123" 또는 "—"
   visitsSub: string; // "24h 3 · 7d 40"
   visitConversion: string;
+  unsubscribes: string; // "3" / "—"
   /** 정렬용 원시값 (표시 문자열과 별개) */
-  raw: { conversionRate: number | null; hoursSincePost: number | null; medianConvertMin: number | null; highRiskShare: number; firstAt: string | null; lastAt: string | null; visits: number | null; visitConversion: number | null };
+  raw: { conversionRate: number | null; hoursSincePost: number | null; medianConvertMin: number | null; highRiskShare: number; firstAt: string | null; lastAt: string | null; visits: number | null; visitConversion: number | null; unsubscribes: number | null };
 }
 
 const COLS = {
@@ -39,6 +40,7 @@ const COLS = {
   total: (c: ChannelView) => c.total,
   visits: (c: ChannelView) => c.raw.visits,
   visitConv: (c: ChannelView) => c.raw.visitConversion,
+  churn: (c: ChannelView) => c.raw.unsubscribes,
   conversion: (c: ChannelView) => c.raw.conversionRate,
   sincePost: (c: ChannelView) => c.raw.hoursSincePost,
   company: (c: ChannelView) => c.companyDomains,
@@ -100,12 +102,14 @@ function ChannelForm({ site, initial, onClose }: { site: string; initial?: Parti
 
 const CHART_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#4a3aa7"]; // dataviz 검증 팔레트 (light)
 
-export default function ChannelManager({ site, channels, daily, visitsByDay, visitsAvailable, totalBefore }: {
+export default function ChannelManager({ site, channels, daily, visitsByDay, visitsAvailable, churnByDay, churnAvailable, totalBefore }: {
   site: string;
   channels: ChannelView[];
   daily: { day: string; counts: Record<string, number> }[];
   visitsByDay: { day: string; count: number }[];
   visitsAvailable: boolean;
+  churnByDay: { day: string; count: number }[];
+  churnAvailable: boolean;
   /** 14일 구간 시작 전까지의 누적 구독자 수 (누적 그래프 기준점) */
   totalBefore: number;
 }) {
@@ -119,6 +123,7 @@ export default function ChannelManager({ site, channels, daily, visitsByDay, vis
   const days = daily.map((d) => d.day);
   const signups = daily.map((d) => keys.reduce((a, k) => a + (d.counts[k] || 0), 0));
   const visits = visitsByDay.map((v) => v.count);
+  const churn = churnByDay.map((v) => v.count);
   const cumulative = signups.reduce<number[]>((acc, n, i) => { acc.push((i ? acc[i - 1] : totalBefore) + n); return acc; }, []);
   // 채널별: 구독자 많은 순 상위 3개 + 나머지 "기타" (색 4개 고정 순서)
   const ranked = [...channels].sort((a, b) => b.total - a.total).map((c) => c.code);
@@ -156,6 +161,7 @@ export default function ChannelManager({ site, channels, daily, visitsByDay, vis
                 {srt.th("visits", "유입 (14일)", { num: true, title: "최근 14일 랜딩 방문 수 (브라우저 세션당 1회)" })}
                 {srt.th("visitConv", "방문→구독", { num: true, title: "최근 14일 신규 구독 ÷ 최근 14일 방문" })}
                 {srt.th("conversion", "대상 전환율", { num: true, title: "전체 구독자 ÷ 대상 인원" })}
+                {srt.th("churn", "해지", { num: true, title: "이 채널로 들어온 구독자 중 해지한 수 (전체 기간)" })}
                 {srt.th("sincePost", "게시 후", { num: true, title: "게시 일시 이후 경과 순" })}
                 {srt.th("company", "회사 / 개인", { num: true, title: "회사 도메인 수 순" })}
                 {srt.th("recent", "24시간 · 7일", { num: true, title: "7일 신규 순" })}
@@ -179,6 +185,7 @@ export default function ChannelManager({ site, channels, daily, visitsByDay, vis
                     <td className="num">{c.visits}<span className="cell-sub">{c.visitsSub}</span></td>
                     <td className="num">{c.visitConversion}</td>
                     <td className="num">{c.conversionRate}<span className="cell-sub">{c.audienceSize != null ? `대상 ${c.audienceSize.toLocaleString()}` : "대상 미입력"}</span></td>
+                    <td className="num">{c.unsubscribes}</td>
                     <td className="num">{c.sincePost}<span className="cell-sub">24h {c.within24h} · 72h {c.within72h}</span></td>
                     <td className="num">{c.companyDomains} / {c.personal}</td>
                     <td className="num">{c.last24h} · {c.last7d}</td>
@@ -195,7 +202,7 @@ export default function ChannelManager({ site, channels, daily, visitsByDay, vis
                   </tr>
                   {open === c.code && (
                     <tr>
-                      <td colSpan={12} className="detail">
+                      <td colSpan={13} className="detail">
                         <div className="grid2">
                           <div>
                             <div><strong>안내 링크</strong> <CopyLink url={`${site}/?ref=${c.code}`} /></div>
@@ -216,7 +223,7 @@ export default function ChannelManager({ site, channels, daily, visitsByDay, vis
                   )}
                   {editing === c.code && (
                     <tr>
-                      <td colSpan={12} className="detail">
+                      <td colSpan={13} className="detail">
                         <ChannelForm site={site} initial={c.name == null ? { code: c.code } : c} onClose={() => setEditing(null)} />
                       </td>
                     </tr>
@@ -231,39 +238,58 @@ export default function ChannelManager({ site, channels, daily, visitsByDay, vis
       <section className="card">
         <h2>최근 14일 추이</h2>
         <p className="sub">그래프에 마우스를 올리면 날짜별 값이 보입니다. 아래 표가 같은 데이터의 표 보기입니다.</p>
+        <TimeSeriesChart title="누적 구독자" sub="구간 시작 전 누적 + 일별 신규" days={days} series={[{ key: "cum", label: "누적 구독자", color: CHART_COLORS[3], values: cumulative }]} height={180} />
         <TimeSeriesChart
           title="유입 · 신규 구독 (일별)"
-          sub={visitsAvailable ? "유입 = 랜딩 방문(브라우저 세션당 1회) · 신규 구독 = 전 채널 합계" : "유입은 visits 테이블 마이그레이션 후 집계됩니다"}
+          sub={visitsAvailable ? "유입 = 랜딩 방문(브라우저 세션당 1회) · 신규 구독 = 전 채널 합계 · 구독해지 = 본인 해지 + 운영자 삭제" : "유입은 visits 테이블 마이그레이션 후 집계됩니다"}
           days={days}
           series={[
             ...(visitsAvailable ? [{ key: "visits", label: "유입", color: CHART_COLORS[0], values: visits }] : []),
             { key: "signups", label: "신규 구독", color: CHART_COLORS[1], values: signups },
+            ...(churnAvailable ? [{ key: "churn", label: "구독해지", color: CHART_COLORS[2], values: churn, dashed: true }] : []),
           ]}
         />
         <TimeSeriesChart title="채널별 신규 구독 (일별)" sub="구독자 많은 순 상위 3개 채널 + 기타" days={days} series={channelSeries} />
-        <TimeSeriesChart title="누적 구독자" sub="구간 시작 전 누적 + 일별 신규" days={days} series={[{ key: "cum", label: "누적 구독자", color: CHART_COLORS[3], values: cumulative }]} height={160} />
       </section>
 
       <section className="card">
         <h2>최근 14일 채널별 신규 구독 (일별)</h2>
-        <div className="table-wrap">
-          <table className="admin-table compact">
-            <thead><tr><th>날짜</th>{keys.map((k) => { const n = channels.find((c) => c.code === k)?.name ?? k; return <th key={k} className="num" title={n}>{n.length > 14 ? `${n.slice(0, 14)}…` : n}<span className="cell-sub" style={{ fontWeight: 400 }}>{isPseudo(k) ? "" : k}</span></th>; })}<th className="num">합계</th></tr></thead>
-            <tbody>
-              {daily.map((row) => {
-                const sum = keys.reduce((a, k) => a + (row.counts[k] || 0), 0);
-                return (
-                  <tr key={row.day} className={sum === 0 ? "inactive" : ""}>
-                    <td>{row.day.slice(5)}</td>
-                    {keys.map((k) => <td key={k} className="num">{row.counts[k] || ""}</td>)}
-                    <td className="num"><strong>{sum || ""}</strong></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DailyTable keys={keys} channels={channels} daily={daily} isPseudo={isPseudo} />
       </section>
     </>
+  );
+}
+
+
+/** 일별 표 — 날짜·채널별·합계 열 제목 클릭 정렬 (기본: 최근 날짜 순) */
+function DailyTable({ keys, channels, daily, isPseudo }: { keys: string[]; channels: ChannelView[]; daily: { day: string; counts: Record<string, number> }[]; isPseudo: (k: string) => boolean }) {
+  const rows = daily.map((r) => ({ day: r.day, counts: r.counts, sum: keys.reduce((a, k) => a + (r.counts[k] || 0), 0) }));
+  const cols: Record<string, (r: (typeof rows)[number]) => number | string> = { day: (r) => r.day, sum: (r) => r.sum };
+  for (const k of keys) cols[`c:${k}`] = (r) => r.counts[k] || 0;
+  const srt = useSort(rows, cols, { key: "day", dir: "desc" });
+  return (
+    <div className="table-wrap">
+      <table className="admin-table compact">
+        <thead>
+          <tr>
+            {srt.th("day", "날짜")}
+            {keys.map((k) => {
+              const n = channels.find((c) => c.code === k)?.name ?? k;
+              return srt.th(`c:${k}`, <>{n.length > 14 ? `${n.slice(0, 14)}…` : n}<span className="cell-sub" style={{ fontWeight: 400 }}>{isPseudo(k) ? "" : k}</span></>, { num: true, title: n });
+            })}
+            {srt.th("sum", "합계", { num: true })}
+          </tr>
+        </thead>
+        <tbody>
+          {srt.sorted.map((row) => (
+            <tr key={row.day} className={row.sum === 0 ? "inactive" : ""}>
+              <td>{row.day.slice(5)}</td>
+              {keys.map((k) => <td key={k} className="num">{row.counts[k] || ""}</td>)}
+              <td className="num"><strong>{row.sum || ""}</strong></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

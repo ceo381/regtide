@@ -127,6 +127,15 @@ export async function checkDataAndDelivery(now = new Date()): Promise<HealthIssu
   if (now >= mondayNoonKst && dels.length === 0 && active > 0) {
     issues.push({ level: "critical", area: "발송", title: "이번 주 정기 발송 기록 없음", detail: `월요일 09:00 KST 크론이 실행되지 않았거나 실패했습니다 (활성 구독자 ${active}명).`, action: "Vercel Logs 에서 /api/cron/weekly 확인 후 필요시 ?step=send&confirm=all 로 수동 발송" });
   }
+  // 구독해지 급증 — 최근 7일 해지가 활성 구독자의 5% 이상(최소 3건)이면 확인, 10% 이상이면 즉시
+  try {
+    const weekAgo = new Date(now.getTime() - 7 * 24 * HOURS).toISOString();
+    const { count: unsub7, error: ue } = await sb.from("unsubscribes").select("id", { count: "exact", head: true }).gte("unsubscribed_at", weekAgo);
+    if (!ue && (unsub7 ?? 0) >= 3 && active > 0) {
+      const rate = (unsub7 ?? 0) / (active + (unsub7 ?? 0));
+      if (rate >= 0.05) issues.push({ level: rate >= 0.1 ? "critical" : "warning", area: "발송", title: `구독해지 증가: 최근 7일 ${unsub7}건 (${(rate * 100).toFixed(1)}%)`, detail: "발송 직후 해지가 몰리면 내용·빈도·분류 정확도 문제일 수 있습니다. 구독자 탭의 해지 통계(구독 기간·받은 리포트 수)로 원인을 좁히세요.", action: "최근 리포트의 '무관' 항목 비율과 카탈로그 키워드 점검" });
+    }
+  } catch { /* unsubscribes 테이블 없음 — 마이그레이션 전 */ }
   // Resend 일일 한도
   const limit = Number(process.env.RESEND_DAILY_LIMIT ?? 100) || 100;
   if (active + 5 >= limit) {

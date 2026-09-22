@@ -80,7 +80,37 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     </>
   );
 
+  const churnCard = (
+    <section className="card">
+      <h2>최근 구독해지 {d.churn.available ? `(누적 ${d.churn.total}건)` : ""}</h2>
+      <p className="sub">해지 시 이메일 등 식별 정보는 즉시 삭제되고 아래 통계만 남습니다. 구독 기간이 짧고 받은 리포트가 0~1건이면 "기대와 다름", 여러 건 받은 뒤 해지면 "내용 불만족" 신호로 보세요.</p>
+      {!d.churn.available ? <p className="sub">unsubscribes 테이블 마이그레이션 후 집계됩니다.</p> : d.churn.recent.length === 0 ? <p className="sub">아직 해지가 없습니다.</p> : (
+        <div className="table-wrap">
+          <table className="admin-table compact">
+            <thead><tr><th>해지 시각</th><th>구분</th><th>채널</th><th className="num">구독 기간</th><th className="num">받은 리포트</th><th className="num">규격 수</th><th>품목 유형</th><th>메일</th></tr></thead>
+            <tbody>
+              {d.churn.recent.map((u, i) => (
+                <tr key={i}>
+                  <td>{fmt(u.unsubscribed_at)}</td>
+                  <td>{u.reason === "admin" ? "운영자 삭제" : "본인 해지"}</td>
+                  <td>{u.ref ?? NO_REF}</td>
+                  <td className="num">{u.tenure_days == null ? "—" : `${u.tenure_days}일`}</td>
+                  <td className="num">{u.deliveries_received ?? "—"}</td>
+                  <td className="num">{u.catalog_count ?? "—"}</td>
+                  <td>{u.categories?.join(", ") || "—"}</td>
+                  <td>{u.mail_type === "company" ? "회사" : u.mail_type === "personal" ? "개인" : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+
   const subscribers = (
+    <>
+    {churnCard}
     <section className="card">
       <SubscriberTable
         rows={d.subscribers.map((s) => ({
@@ -98,6 +128,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         }))}
       />
     </section>
+    </>
   );
 
   const updates = (
@@ -147,6 +178,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       daily={d.channelDaily}
       visitsByDay={d.visitsByDay}
       visitsAvailable={d.visits.available}
+      churnByDay={d.churnByDay}
+      churnAvailable={d.churn.available}
       totalBefore={d.subscribers.length - d.signupsByDay.reduce((a, b) => a + b.count, 0)}
       channels={d.channels.map((c) => ({
         code: c.ref,
@@ -174,7 +207,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         visits: c.visits == null ? "—" : String(c.visits),
         visitsSub: c.visits == null ? "집계 전" : `24h ${c.visits24h} · 7d ${c.visits7d}`,
         visitConversion: pct(c.visitConversion),
-        raw: { conversionRate: c.conversionRate, hoursSincePost: c.hoursSincePost, medianConvertMin: c.medianConvertMin, highRiskShare: c.highRiskShare, firstAt: c.firstAt, lastAt: c.lastAt, visits: c.visits, visitConversion: c.visitConversion },
+        unsubscribes: c.unsubscribes == null ? "—" : String(c.unsubscribes),
+        raw: { conversionRate: c.conversionRate, hoursSincePost: c.hoursSincePost, medianConvertMin: c.medianConvertMin, highRiskShare: c.highRiskShare, firstAt: c.firstAt, lastAt: c.lastAt, visits: c.visits, visitConversion: c.visitConversion, unsubscribes: c.unsubscribes },
       }))}
     />
   );
@@ -237,6 +271,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         <div className="kpi"><span>활성 구독자</span><strong>{stats.totalActive}</strong><small>다음 마일스톤 {nextMilestone}명</small></div>
         <div className="kpi"><span>24시간 신규</span><strong>{stats.newSubscribers.length}</strong><small>최근 14일 합계 {d.signupsByDay.reduce((a, b) => a + b.count, 0)}</small></div>
         <div className="kpi"><span>유입 (24시간)</span><strong>{d.visits.available ? d.visits.last24h : "—"}</strong><small>{d.visits.available ? `7일 ${d.visits.last7d} · 14일 ${d.visits.last14d} · 누적 ${d.visits.total}` : "visits 테이블 마이그레이션 필요"}</small></div>
+        <div className={`kpi${d.churn.last7d > 0 ? " kpi-warn" : ""}`}><span>구독해지 (7일)</span><strong>{d.churn.available ? d.churn.last7d : "—"}</strong><small>{d.churn.available ? `24시간 ${d.churn.last24h} · 누적 ${d.churn.total} · 7일 해지율 ${d.churn.rate7d == null ? "—" : `${(d.churn.rate7d * 100).toFixed(1)}%`}` : "unsubscribes 테이블 마이그레이션 필요"}</small></div>
         <div className="kpi"><span>회사 도메인</span><strong>{stats.companyDomains}</strong><small>개인 메일 {stats.personalMailCount}명</small></div>
         <div className="kpi"><span>같은 회사 2명+</span><strong>{stats.multiSeatDomains.length}</strong><small>{stats.multiSeatDomains.length ? stats.multiSeatDomains.slice(0, 3).map((x) => `${x.domain} ${x.count}`).join(" · ") : "조직 확산 지표"}</small></div>
         <div className="kpi"><span>이번 주 발송 ({d.weekStart})</span><strong>{delCount("sent")}</strong><small>실패 {delCount("failed")} · 해당없음 {delCount("skipped_empty")}</small></div>

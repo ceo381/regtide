@@ -16,7 +16,11 @@ export interface DashboardData {
   channelDaily: { day: string; counts: Record<string, number> }[]; // 최근 14일 채널별 신규
   visits: { total: number; last24h: number; last7d: number; last14d: number; available: boolean }; // 유입(방문). visits 테이블 없으면 available=false
   visitsByDay: { day: string; count: number }[]; // 최근 14일, KST
+  churn: { available: boolean; total: number; last24h: number; last7d: number; last14d: number; rate7d: number | null; recent: UnsubscribeView[] };
+  churnByDay: { day: string; count: number }[];
 }
+
+export interface UnsubscribeView { unsubscribed_at: string; reason: string; ref: string | null; tenure_days: number | null; catalog_count: number | null; categories: string[]; deliveries_received: number | null; mail_type: string | null }
 
 export interface VisitRow { ref: string | null; referrer: string | null; landed_at: string }
 
@@ -51,12 +55,16 @@ export interface ChannelStat {
   visits7d: number | null;
   /** 방문 → 구독 전환율 (최근 14일 신규 구독자 ÷ 최근 14일 방문) */
   visitConversion: number | null;
+  /** 구독해지 수 (전체 기간, unsubscribes 테이블). null 이면 집계 불가 */
+  unsubscribes: number | null;
 }
 
 const PERSONAL = new Set(["naver.com", "gmail.com", "daum.net", "hanmail.net", "nate.com", "kakao.com", "hotmail.com", "outlook.com", "yahoo.com", "icloud.com", "live.com", "me.com"]);
 export const NO_REF = "(직접/미상)";
 
-export function computeChannels(subs: DashboardData["subscribers"], now = new Date(), registry: ChannelRow[] = [], visits: VisitRow[] | null = null): { channels: ChannelStat[]; channelDaily: DashboardData["channelDaily"] } {
+export function computeChannels(subs: DashboardData["subscribers"], now = new Date(), registry: ChannelRow[] = [], visits: VisitRow[] | null = null, unsubs: { ref: string | null }[] | null = null): { channels: ChannelStat[]; channelDaily: DashboardData["channelDaily"] } {
+  const unsubByRef = new Map<string, number>();
+  for (const u of unsubs ?? []) { const k = (u.ref && u.ref.trim()) || NO_REF; unsubByRef.set(k, (unsubByRef.get(k) ?? 0) + 1); }
   const reg = new Map(registry.map((r) => [r.code, r]));
   const groups = new Map<string, DashboardData["subscribers"]>();
   // 방문을 채널별로 묶기 (ref 없음 → NO_REF)
@@ -104,6 +112,7 @@ export function computeChannels(subs: DashboardData["subscribers"], now = new Da
     const within = (h: number) => (Number.isFinite(postedMs) ? list.filter((s) => { const t = ms(s.created_at); return t >= postedMs && t <= postedMs + h * 3600_000; }).length : null);
     const vs = visits ? visitGroups.get(ref) ?? [] : null;
     return {
+      unsubscribes: unsubs ? unsubByRef.get(ref) ?? 0 : null,
       visits: vs ? vs.length : null,
       visits24h: vs ? vs.filter((v) => ms(v.landed_at) >= h24).length : null,
       visits7d: vs ? vs.filter((v) => ms(v.landed_at) >= d7).length : null,
@@ -151,7 +160,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   // 통계·구독자·수집항목·발송기록을 한 번에 병렬 조회
   const since14 = new Date(now.getTime() - 14 * 86400_000).toISOString();
-  const [stats, subsQ, upsQ, delsQ, registry, visitsQ] = await Promise.all([
+  const [stats, subsQ, upsQ, delsQ, registry, visitsQ, churnQ] = await Promise.all([
     collectAdminStats(now),
     selectAll<DashboardData["subscribers"][number]>(() => sb.from("subscribers").select("*").order("created_at", { ascending: false }).order("id", { ascending: true })).then((data) => ({ data, error: null as null })),
     sb.from("updates").select("*").order("created_at", { ascending: false }).limit(60),
@@ -162,6 +171,11 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
       sb.from("visits").select("id", { count: "exact", head: true }),
       selectAll<VisitRow>(() => sb.from("visits").select("ref, referrer, landed_at").gte("landed_at", since14).order("landed_at", { ascending: false }).order("id", { ascending: true })),
     ]).then(([c, rows]) => (c.error ? null : { total: c.count ?? 0, rows })).catch(() => null),
+    // 구독해지 통계 (식별 정보 없음). 테이블이 없으면 null
+    Promise.all([
+      sb.from("unsubscribes").select("id", { count: "exact", head: true }),
+      selectAll<UnsubscribeView & { ref: string | null }>(() => sb.from("unsubscribes").select("unsubscribed_at, reason, ref, tenure_days, catalog_count, categories, deliveries_received, mail_type").order("unsubscribed_at", { ascending: false }).order("id", { ascending: true })),
+    ]).then(([c, rows]) => (c.error ? null : { total: c.count ?? rows.length, rows })).catch(() => null),
   ]);
   if (subsQ.error) throw subsQ.error;
   if (upsQ.error) throw upsQ.error;
@@ -190,7 +204,13 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
 
   // 채널별 방문은 전체 기간이 아니라 최근 14일 행 기준 (전체 기간 채널별 집계는 행 수가 커지면 별도 집계 필요)
   const visitRows = visitsQ?.rows ?? null;
-  const { channels, channelDaily } = computeChannels(subs as DashboardData["subscribers"], now, registry, visitRows);
+  const unsubRows = churnQ?.rows ?? null;
+  const { channels, channelDaily } = computeChannels(subs as DashboardData["subscribers"], now, registry, visitRows, unsubRows);
+  const cDays: Record<string, number> = {};
+  for (const d of Object.keys(days)) cDays[d] = 0;
+  for (const u of unsubRows ?? []) { const d = kstDay(u.unsubscribed_at); if (d in cDays) cDays[d]++; }
+  const uin = (h: number) => (unsubRows ?? []).filter((u) => ms(u.unsubscribed_at) >= now.getTime() - h * 3600_000).length;
+  const activeNow = (subs as { active: boolean }[]).filter((s) => s.active).length;
   const vDays: Record<string, number> = {};
   for (const d of Object.keys(days)) vDays[d] = 0;
   for (const v of visitRows ?? []) { const d = kstDay(v.landed_at); if (d in vDays) vDays[d]++; }
@@ -198,6 +218,8 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   return {
     visits: { available: !!visitsQ, total: visitsQ?.total ?? 0, last24h: vin(24), last7d: vin(24 * 7), last14d: visitRows?.length ?? 0 },
     visitsByDay: Object.entries(vDays).map(([day, count]) => ({ day, count })),
+    churn: { available: !!churnQ, total: churnQ?.total ?? 0, last24h: uin(24), last7d: uin(24 * 7), last14d: uin(24 * 14), rate7d: activeNow + uin(24 * 7) > 0 ? uin(24 * 7) / (activeNow + uin(24 * 7)) : null, recent: (unsubRows ?? []).slice(0, 50) },
+    churnByDay: Object.entries(cDays).map(([day, count]) => ({ day, count })),
     stats,
     channels,
     channelDaily,

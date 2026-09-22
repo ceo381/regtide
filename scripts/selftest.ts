@@ -500,6 +500,17 @@ async function main() {
     const res = await POST(Object.assign(post("tok1"), { nextUrl: new URL("http://localhost/api/unsubscribe") }) as never);
     assert.equal(res.headers.get("location"), "https://regtide.example/?unsub=ok");
     assert.ok(!db.tables.subscribers.some((s) => s.unsubscribe_token === "tok1"));
+    // 해지 통계: 식별 정보 없이 한 줄 남는다
+    const u = db.tables.unsubscribes?.at(-1);
+    assert.ok(u, "unsubscribes 행 생성");
+    assert.equal(u!.reason, "user");
+    for (const k of ["email", "subscriber_id", "unsubscribe_token", "domain"]) assert.ok(!(k in u!), `해지 통계에 ${k} 없음`);
+    assert.equal(u!.catalog_count, 1); assert.deepEqual(u!.categories, ["2등급"]);
+    assert.ok(Array.isArray(u!.categories));
+    const { anonymizeForChurn } = await import("@/lib/churn");
+    const a = anonymizeForChurn({ id: "x", email: "a@gmail.com", ref: "openchat1", created_at: "2026-09-21T00:00:00Z", catalog_ids: ["a", "b"], products: [{ category: "2등급" }, { category: "2등급" }], last_sent_at: null }, "user", 1, new Date("2026-09-28T00:00:00Z"));
+    assert.equal(a.tenure_days, 7); assert.equal(a.mail_type, "personal"); assert.deepEqual(a.categories, ["2등급"]); assert.equal(a.deliveries_received, 1);
+    assert.ok(!JSON.stringify(a).includes("gmail"), "도메인도 저장하지 않음");
     const bad = await POST(Object.assign(post("nope"), { nextUrl: new URL("http://localhost/api/unsubscribe") }) as never);
     assert.equal(bad.headers.get("location"), "https://regtide.example/?unsub=invalid");
   });

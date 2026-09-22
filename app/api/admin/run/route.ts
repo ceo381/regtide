@@ -6,6 +6,7 @@ import { sendWeeklyDigests } from "@/lib/digest";
 import { ADMIN_EMAIL, sendDailyAdminReport } from "@/lib/admin-report";
 import { supabaseAdmin } from "@/lib/supabase";
 import { deleteChannel, upsertChannel, validateChannel } from "@/lib/channels";
+import { recordUnsubscribe, type ChurnSource } from "@/lib/churn";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -52,6 +53,8 @@ export async function POST(req: NextRequest) {
       if (!id) return back("구독자 id 가 없습니다.");
       const sb = supabaseAdmin();
       if (action === "delete") {
+        const { data: sub } = await sb.from("subscribers").select("id, email, ref, created_at, catalog_ids, products, last_sent_at").eq("id", id).maybeSingle();
+        if (sub) await recordUnsubscribe(sub as ChurnSource, "admin");
         const { error } = await sb.from("subscribers").delete().eq("id", id);
         if (error) throw error;
         return back("구독자를 삭제했습니다.");

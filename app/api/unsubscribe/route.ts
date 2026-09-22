@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { recordUnsubscribe, type ChurnSource } from "@/lib/churn";
 
 export const runtime = "nodejs";
 
@@ -39,6 +40,11 @@ export async function POST(req: NextRequest) {
   }
   if (!token) return NextResponse.redirect(`${site}/?unsub=invalid`, 303);
   const sb = supabaseAdmin();
+  // 삭제 전에 익명 통계용으로 읽어 둔다 (이메일·id 는 통계에 저장하지 않음)
+  const { data: sub } = await sb.from("subscribers").select("id, email, ref, created_at, catalog_ids, products, last_sent_at").eq("unsubscribe_token", token).maybeSingle();
+  if (!sub) return NextResponse.redirect(`${site}/?unsub=invalid`, 303);
+  const rec = await recordUnsubscribe(sub as ChurnSource, "user");
+  if (!rec.ok) console.error("[unsubscribe] 해지 통계 기록 실패:", rec.error);
   const { data, error } = await sb.from("subscribers").delete().eq("unsubscribe_token", token).select("id");
   if (error || !data?.length) return NextResponse.redirect(`${site}/?unsub=invalid`, 303);
   return NextResponse.redirect(`${site}/?unsub=ok`, 303);
