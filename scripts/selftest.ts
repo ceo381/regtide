@@ -26,6 +26,7 @@ import { consecutiveZeroRuns } from "@/lib/collect";
 import { checkCollection, checkDisclaimerTemplate } from "@/lib/health";
 import { computeChannels } from "@/lib/admin-data";
 import { upsertChannel, validateChannel, listChannels } from "@/lib/channels";
+import { __setWelcomeMailerForTest, nextMondaySend, renderWelcomeHtml } from "@/lib/welcome";
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://regtide.example";
 process.env.MAIL_FROM = "RegTide <test@regtide.example>";
@@ -410,16 +411,64 @@ async function main() {
     assert.equal((await call({ ...good, email: "not-an-email" })).status, 400, "이메일 형식");
     assert.equal((await call({ ...good, products: [] })).status, 400, "품목 없음");
     assert.equal((await call({ ...good, products: [{ ...good.products[0], catalogIds: ["no-such-id"] }] })).status, 400, "존재하지 않는 카탈로그 ID");
+    const welcomes: { to: string; subject: string; html: string }[] = [];
+    __setWelcomeMailerForTest({ async send(m) { welcomes.push(m); return { id: "w" }; } });
     const r = await call(good);
     assert.equal(r.status, 200);
     assert.equal(r.json.catalogCount, 2);
+    assert.equal(r.json.welcome, "sent");
     const row = db.tables.subscribers.find((s) => s.email === "ra@company.co.kr");
     assert.ok(row, "이메일은 소문자로 정규화되어 저장");
     assert.deepEqual(row!.catalog_ids, ["kr-ivd-act", "eu-ivdr"]);
     assert.ok(row!.consent_at);
-    // 같은 이메일 재구독 → 갱신(중복 생성 아님)
-    await call({ ...good, products: [{ name: "혈당측정기", category: "체외진단의료기기", catalogIds: ["kr-ivd-act"] }] });
+    // 같은 이메일 재구독 → 갱신(중복 생성 아님). 방금 변경했으므로 확인 메일은 다시 보내지 않음(1시간 제한)
+    const r2 = await call({ ...good, products: [{ name: "혈당측정기", category: "체외진단의료기기", catalogIds: ["kr-ivd-act"] }] });
     assert.equal(db.tables.subscribers.filter((s) => s.email === "ra@company.co.kr").length, 1);
+    assert.equal(r2.json.welcome, "skipped", "설정 변경 직후 반복 신청에는 확인 메일을 보내지 않음");
+    assert.equal(welcomes.length, 1);
+    __setWelcomeMailerForTest(null);
+  });
+  await ok("구독 확인 메일: 신청자 본인에게만, 품목·규격·발송 주기·첫 리포트 예정일·면책·구독해지 링크 포함, 실패해도 구독은 성공", async () => {
+    const { POST } = await import("@/app/api/subscribe/route");
+    const call = async (body: unknown) => {
+      const req = new Request("http://localhost/api/subscribe", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+      const res = await POST(req as never);
+      return { status: res.status, json: await res.json() };
+    };
+    const welcomes: { to: string; subject: string; html: string }[] = [];
+    __setWelcomeMailerForTest({ async send(m) { welcomes.push(m); return { id: "w" }; } });
+    const body = { email: "welcome@company.co.kr", consent: true, products: [{ name: "인공호흡기", category: "3등급", catalogIds: ["kr-mdact", "eu-mdr"] }] };
+    const r = await call(body);
+    assert.equal(r.status, 200);
+    assert.equal(welcomes.length, 1);
+    const m = welcomes[0];
+    assert.equal(m.to, "welcome@company.co.kr", "수신자는 신청자 본인");
+    assert.ok(m.subject.includes("구독이 완료"));
+    assert.ok(m.html.includes("인공호흡기"), "등록 품목");
+    assert.ok(m.html.includes("매주 월요일 09:00 KST"), "발송 주기");
+    assert.ok(m.html.includes("첫 리포트 예정"), "첫 리포트 예정일");
+    assert.ok(m.html.includes("모니터링 대상"), "지원 국가·기관");
+    const footer = m.html.slice(m.html.indexOf("이용 안내 및 면책"));
+    for (const needle of ["참고용 정보", "법적 효력이 없습니다", "원문 링크에서 확인", "책임은 이용자에게", "/disclaimer", "/api/unsubscribe?token="]) assert.ok(footer.includes(needle), `면책: ${needle}`);
+    assert.ok(!/\bAI\b|인공지능|자동 요약|생성형/.test(footer), "AI 언급 금지");
+    assert.ok(!m.html.includes("수신거부"));
+    const row = db.tables.subscribers.find((s) => s.email === "welcome@company.co.kr")!;
+    assert.ok(m.html.includes(`token=${row.unsubscribe_token}`), "구독해지 링크가 본인 토큰");
+    // 발송기가 죽어도 구독은 저장된다
+    __setWelcomeMailerForTest({ async send() { throw new Error("resend down"); } });
+    const r2 = await call({ ...body, email: "welcome2@company.co.kr" });
+    assert.equal(r2.status, 200);
+    assert.equal(r2.json.welcome, "failed");
+    assert.ok(db.tables.subscribers.some((s) => s.email === "welcome2@company.co.kr"), "메일 실패와 무관하게 구독 저장");
+    __setWelcomeMailerForTest(null);
+    // 첫 리포트 예정일 계산: 월요일 09:00 KST
+    const d = nextMondaySend(new Date("2026-09-22T06:00:00Z")); // 화요일 15:00 KST
+    assert.equal(d.toISOString(), "2026-09-28T00:00:00.000Z");
+    assert.equal(nextMondaySend(new Date("2026-09-27T23:30:00Z")).toISOString(), "2026-09-28T00:00:00.000Z", "월요일 09:00 전이면 당일");
+    assert.equal(nextMondaySend(new Date("2026-09-28T01:00:00Z")).toISOString(), "2026-10-05T00:00:00.000Z", "월요일 09:00 이후면 다음 주");
+    // 설정 변경 문구
+    const html = renderWelcomeHtml({ id: "x", email: "a@b.c", unsubscribe_token: "t", products: [], catalog_ids: ["kr-mdact"], active: true, last_sent_at: null }, { isNew: false });
+    assert.ok(html.includes("구독 설정이 변경되었습니다"));
   });
   await ok("구독해지: GET 은 확인 페이지만(삭제 없음), POST 로 토큰 일치 시 삭제 후 리다이렉트", async () => {
     const { GET, POST } = await import("@/app/api/unsubscribe/route");

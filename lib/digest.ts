@@ -3,16 +3,13 @@ import { CATALOG, CATALOG_BY_ID, JURISDICTION_LABEL, type Jurisdiction } from "@
 import { mailFrom, selectAll, supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { COVERAGE, describeSource, sourcesUsed } from "@/lib/source-info";
 import { COLLECT_LOOKBACK_DAYS } from "@/lib/collect";
+import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc } from "@/lib/email-common";
 
 const IMPACT_LABEL: Record<string, { text: string; color: string }> = {
   high: { text: "즉시 조치", color: "#b42318" },
   medium: { text: "검토 필요", color: "#b54708" },
   low: { text: "참고", color: "#175cd3" },
 };
-
-function esc(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
 function fmtDate(s: string | null) {
   if (!s) return "";
@@ -78,8 +75,6 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
   const generatedAt = period.generatedAt ?? new Date();
   // 수집 기간 표기: 지난 발송(7일 전) 이후 매일 수집. 이전 메일에 안내한 항목은 제외됨
   const collectSince = new Date(generatedAt.getTime() - 7 * 86400_000);
-  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "";
-  const unsub = `${site}/api/unsubscribe?token=${encodeURIComponent(sub.unsubscribe_token)}`;
   const byJ: Partial<Record<Jurisdiction, UpdateRow[]>> = {};
   for (const u of updates) (byJ[u.jurisdiction as Jurisdiction] ??= []).push(u);
 
@@ -120,7 +115,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
 
   const empty = `<p style="color:#475467;font-size:15px;padding:24px 0">이번 주에는 선택하신 규격·인증에 해당하는 변경 사항이 감지되지 않았습니다.</p>`;
 
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"><style>@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");body,td,p,a,h1,h2,h3,span,strong{font-family:Pretendard,'Pretendard Variable',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',Roboto,sans-serif !important}</style></head><body style="margin:0;background:#f9fafb;font-family:Pretendard,'Pretendard Variable',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',Roboto,sans-serif">
+  return `<!doctype html><html lang="ko">${EMAIL_HEAD}<body style="margin:0;background:#f9fafb;font-family:${EMAIL_FONT}">
   <div style="max-width:640px;margin:0 auto;padding:32px 20px">
     <div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:32px">
       <p style="margin:0 0 4px;color:#667085;font-size:13px;letter-spacing:.04em">REGTIDE · 주간 리포트</p>
@@ -134,11 +129,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       ${updates.length ? `<p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0 0 12px"><strong style="color:#667085">이번 메일의 출처</strong><br>
       ${sourcesUsed(updates.map((u) => u.source)).map((si) => `${si.url ? `<a href="${esc(si.url)}" style="color:#667085">${esc(si.agency)}</a>` : esc(si.agency)}${si.name ? ` — ${esc(si.name)}` : ""}`).join("<br>")}<br>
       "기관 발표"는 해당 기관이 원문에 표기한 게재 일시, "변경 감지"는 기관 페이지의 변경을 RegTide 가 확인한 시각입니다. 표기 시각은 모두 한국 표준시(KST)입니다.</p>` : ""}
-      <p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0 0 8px"><strong style="color:#667085">이용 안내 및 면책</strong><br>
-      본 메일은 식약처, 국가법령정보센터, 미국 Federal Register, EU Commission, ISO/IEC 등 공개된 규제 정보 소스를 자동으로 수집·분류하여 제공하는 <strong>참고용 정보</strong>입니다. 법률·규제 자문이 아니며 법적 효력이 없습니다. 발췌문은 원문의 일부이므로 정확한 내용과 시행일은 반드시 원문 링크에서 확인하시기 바랍니다.<br>
-      수집 소스의 변경, 사이트 접근 제한, 분류 규칙의 한계 등으로 일부 변경 사항이 누락되거나 지연되거나 관련 없는 항목이 포함될 수 있습니다. 본 정보를 바탕으로 한 인허가·품질·사업상 판단과 그 결과에 대한 책임은 이용자에게 있으며, RegTide 는 이에 대해 책임을 지지 않습니다. 각 원문의 저작권은 해당 발행 기관에 있습니다. 전문은 <a href="${esc(site)}/disclaimer" style="color:#667085">이용 안내 및 면책조항</a>을 참고하세요.</p>
-      <p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0">
-      더 이상 수신을 원치 않으시면 <a href="${esc(unsub)}" style="color:#667085">구독해지</a>를 누른 뒤 확인 화면에서 해지를 선택해 주세요. 구독해지 시 이메일 주소는 즉시 삭제됩니다.</p>
+      ${disclaimerFooterHtml(sub.unsubscribe_token)}
     </div>
   </div></body></html>`;
 }

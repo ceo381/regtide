@@ -2,6 +2,7 @@ import { allAdapters } from "@/lib/sources";
 import { consecutiveZeroRuns, enabled, everHadItems, type LastCollect } from "@/lib/collect";
 import { describeSource } from "@/lib/source-info";
 import { renderDigestHtml } from "@/lib/digest";
+import { renderWelcomeHtml } from "@/lib/welcome";
 import { supabaseAdmin, type SubscriberRow } from "@/lib/supabase";
 
 /**
@@ -31,13 +32,11 @@ const HOURS = 3600_000;
 export function checkDisclaimerTemplate(): HealthIssue[] {
   const issues: HealthIssue[] = [];
   const sub: SubscriberRow = { id: "health", email: "health@check.local", unsubscribe_token: "x", products: [], catalog_ids: [], active: true, last_sent_at: null };
-  let html = "";
-  try {
-    html = renderDigestHtml(sub, [], { start: new Date(), end: new Date(), generatedAt: new Date() });
-  } catch (e) {
-    return [{ level: "critical", area: "면책·고지", title: "메일 템플릿 렌더링 실패", detail: String((e as Error).message ?? e), action: "lib/digest.ts 확인" }];
-  }
-  const footer = html.slice(html.indexOf("이용 안내 및 면책"));
+  // 구독자에게 나가는 모든 템플릿(주간 리포트·구독 확인)을 렌더링해 같은 기준으로 검사
+  const templates: [string, () => string][] = [
+    ["주간 리포트", () => renderDigestHtml(sub, [], { start: new Date(), end: new Date(), generatedAt: new Date() })],
+    ["구독 확인", () => renderWelcomeHtml(sub, { isNew: true })],
+  ];
   const must: [string, string][] = [
     ["참고용 정보", "'참고용' 명시"],
     ["법적 효력이 없습니다", "법적 효력 부인"],
@@ -46,11 +45,22 @@ export function checkDisclaimerTemplate(): HealthIssue[] {
     ["/disclaimer", "면책조항 전문 링크"],
     ["/api/unsubscribe?token=", "구독해지 링크"],
   ];
-  for (const [needle, label] of must) {
-    if (!footer.includes(needle)) issues.push({ level: "critical", area: "면책·고지", title: `메일 면책 고지 누락: ${label}`, detail: `템플릿 하단에 "${needle}" 가 없습니다.`, action: "lib/digest.ts 의 면책 문구를 복구하고 selftest 실행" });
+  for (const [name, render] of templates) {
+    let html = "";
+    try {
+      html = render();
+    } catch (e) {
+      issues.push({ level: "critical", area: "면책·고지", title: `${name} 메일 템플릿 렌더링 실패`, detail: String((e as Error).message ?? e), action: "lib/digest.ts · lib/welcome.ts 확인" });
+      continue;
+    }
+    const at = html.indexOf("이용 안내 및 면책");
+    const footer = at >= 0 ? html.slice(at) : "";
+    for (const [needle, label] of must) {
+      if (!footer.includes(needle)) issues.push({ level: "critical", area: "면책·고지", title: `${name} 메일 면책 고지 누락: ${label}`, detail: `템플릿 하단에 "${needle}" 가 없습니다.`, action: "lib/email-common.ts 의 면책 문구를 복구하고 selftest 실행" });
+    }
+    if (/\bAI\b|인공지능|자동 요약|생성형/.test(footer)) issues.push({ level: "critical", area: "면책·고지", title: `${name} 메일 면책 문구에 AI 언급`, detail: "운영 방침상 면책·안내 문구에 AI 를 언급하지 않습니다.", action: "lib/email-common.ts 문구 수정" });
+    if (html.includes("수신거부")) issues.push({ level: "warning", area: "면책·고지", title: `${name} 메일에 '수신거부' 용어 사용`, detail: "'구독해지' 로 통일해야 합니다.", action: "템플릿 문구 수정" });
   }
-  if (/\bAI\b|인공지능|자동 요약|생성형/.test(footer)) issues.push({ level: "critical", area: "면책·고지", title: "면책 문구에 AI 언급", detail: "운영 방침상 면책·안내 문구에 AI 를 언급하지 않습니다.", action: "lib/digest.ts 문구 수정" });
-  if (html.includes("수신거부")) issues.push({ level: "warning", area: "면책·고지", title: "'수신거부' 용어 사용", detail: "'구독해지' 로 통일해야 합니다.", action: "lib/digest.ts 문구 수정" });
   if (!(process.env.NEXT_PUBLIC_SITE_URL ?? "").startsWith("https://")) issues.push({ level: "warning", area: "설정", title: "사이트 URL 이 https 가 아님", detail: `NEXT_PUBLIC_SITE_URL=${process.env.NEXT_PUBLIC_SITE_URL ?? "(미설정)"} — 메일의 구독해지·면책 링크가 이 값으로 생성됩니다.`, action: "Vercel 환경변수 확인" });
   return issues;
 }

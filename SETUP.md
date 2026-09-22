@@ -631,3 +631,18 @@ alter table channels enable row level security;
 | 일일 운영 리포트가 안 옴 | Vercel `Settings → Cron Jobs` 에 `/api/cron/daily-report` 가 보이는지(vercel.json 반영은 배포 시), `MAIL_FROM` 도메인 인증 상태, `ADMIN_EMAIL` 오타. L-3 으로 수동 호출해 오류 메시지 확인 |
 | 월요일 메일이 비어 있거나 안 옴 | K-3 참고. `deliveries.status` 확인 (`sent`/`skipped_empty`/`failed`), Vercel `Logs` 에서 크론 실행 기록 확인 |
 | `npm run selftest` 가 esbuild 플랫폼 오류 | Windows 에서 설치한 `node_modules` 를 다른 OS(WSL·리눅스)에서 실행한 경우 → 해당 OS 에서 `npm install` 다시 |
+
+## T. 구독 확인 메일 (2026-09-22)
+
+구독 신청 직후 **신청한 주소로 1회** 확인 메일을 보냅니다 (`lib/welcome.ts`, 호출 `app/api/subscribe/route.ts`).
+
+- 신규 구독: `[RegTide] 구독이 완료되었습니다` / 기존 구독자의 설정 변경: `[RegTide] 구독 설정이 변경되었습니다`
+- 내용: 발송 주기(매주 월요일 09:00 KST)와 첫 리포트 예정일, 등록 품목, 선택 규격·인증(관할별), 모니터링 대상 기관, 설정 변경 방법, 면책 고지, 구독해지 링크(2단계 확인)
+- 악용 방지: 같은 주소로 1시간 안에 반복 신청하면 확인 메일을 다시 보내지 않음(구독 데이터는 갱신됨). IP 당 분당 10회 제한은 그대로.
+- 메일 실패는 구독 처리에 영향 없음 — 응답 `welcome: sent | skipped | failed`, 실패 시 Vercel 로그에 `[subscribe] 구독 확인 메일 실패`
+- 수신자는 신청자 본인뿐. 운영자 주소로 가지 않음.
+
+**두 핵심 기준 점검**
+- 수집: 영향 없음 (수집·분류·발송 코드 변경 없음)
+- 면책·고지: 면책 문구를 `lib/email-common.ts` 한 곳으로 모아 주간 리포트와 확인 메일이 **같은 문구·같은 구독해지 안내**를 씀. 상태 점검(`checkDisclaimerTemplate`)이 두 템플릿을 모두 검사. 개인정보처리방침 1항 이용 목적에 "구독 신청 확인 메일 발송(신청 직후 1회, 설정 변경 시 1회)" 추가 — 동의 범위 안에서만 발송.
+- selftest 23개 (구독 확인 메일 검증 추가)
