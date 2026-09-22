@@ -30,16 +30,31 @@ export const lawGoKrAdapter: SourceAdapter = {
     if (!oc) return [];
     const out: RawUpdate[] = [];
     const seen = new Set<string>();
+    // "오류 없이 0건" 방지: 질의별 실패를 모아 두고, 정상 응답이 하나도 없으면 예외로 드러낸다
+    const failures: string[] = [];
+    let okCount = 0;
 
     for (const target of ["law", "admrul"] as const) {
       for (const q of QUERIES) {
-        const params = new URLSearchParams({ OC: oc, target, type: "JSON", query: q, display: "100", sort: target === "law" ? "ddes" : "ddes" });
-        const res = await fetch(`https://www.law.go.kr/DRF/lawSearch.do?${params}`, { cache: "no-store" });
-        if (!res.ok) continue;
-        const json = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-        if (!json) continue;
+        const params = new URLSearchParams({ OC: oc, target, type: "JSON", query: q, display: "100", sort: "ddes" });
+        const res = await fetch(`https://www.law.go.kr/DRF/lawSearch.do?${params}`, { cache: "no-store", headers: { accept: "application/json,text/plain,*/*" } });
+        if (!res.ok) { failures.push(`${target}/${q}: HTTP ${res.status}`); continue; }
+        const text = await res.text();
+        let json: Record<string, unknown> | null = null;
+        try { json = JSON.parse(text) as Record<string, unknown>; } catch { json = null; }
+        if (!json) {
+          // OC 미승인·오타 시 law.go.kr 은 200 으로 HTML 안내 페이지를 돌려준다
+          const hint = /인증|승인|권한|OC/.test(text) ? "OC(인증키) 미승인 또는 오타 가능성" : "JSON 이 아닌 응답";
+          failures.push(`${target}/${q}: ${hint} — ${text.replace(/\s+/g, " ").slice(0, 100)}`);
+          continue;
+        }
         const root = (json.LawSearch ?? json.AdmRulSearch ?? json) as Record<string, unknown>;
         const rows = root[target === "law" ? "law" : "admrul"];
+        if (rows === undefined && !("totalCnt" in root)) {
+          failures.push(`${target}/${q}: 알 수 없는 응답 구조 — ${JSON.stringify(json).slice(0, 100)}`);
+          continue;
+        }
+        okCount++;
         const list: Record<string, unknown>[] = Array.isArray(rows) ? rows : rows ? [rows as Record<string, unknown>] : [];
         for (const r of list) {
           const id = String(r["법령일련번호"] ?? r["행정규칙일련번호"] ?? r["법령ID"] ?? "");
@@ -66,6 +81,10 @@ export const lawGoKrAdapter: SourceAdapter = {
         }
       }
     }
+    if (okCount === 0 && failures.length) {
+      throw new Error(`국가법령정보 API 응답 없음 (${failures.length}건 실패). 첫 오류: ${failures[0]}`);
+    }
+    if (failures.length) console.warn(`[law_go_kr] 일부 질의 실패 ${failures.length}/${failures.length + okCount}:`, failures.slice(0, 3));
     return out;
   },
 };
