@@ -1,7 +1,7 @@
 import { CATALOG_BY_ID, JURISDICTION_LABEL, productLabel, type Jurisdiction } from "@/lib/catalog";
 import { COVERAGE } from "@/lib/source-info";
 import { CANDIDATE_DAYS, resendMailer, type Mailer } from "@/lib/digest";
-import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, siteUrl } from "@/lib/email-common";
+import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, forwardUrl, siteUrl } from "@/lib/email-common";
 import { mailFrom, type SubscriberRow } from "@/lib/supabase";
 
 /**
@@ -76,7 +76,7 @@ export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; no
 
       <h2 style="font-size:16px;margin:24px 0 4px;color:#101828">모니터링 대상</h2>
       <p style="margin:0;color:#475467;font-size:13px;line-height:1.7">${COVERAGE.map((c) => `<strong style="color:#344054">${esc(c.country)}</strong> — ${esc(c.agencies)}`).join("<br>")}</p>
-      <p style="margin:12px 0 0;color:#667085;font-size:13px;line-height:1.7">품목이나 규격을 바꾸려면 <a href="${esc(site)}" style="color:#175cd3">구독 페이지</a>에서 같은 이메일로 다시 신청하시면 됩니다. 기존 설정이 새 내용으로 바뀝니다.</p>
+      <p style="margin:12px 0 0;color:#667085;font-size:13px;line-height:1.7">품목이나 규격을 바꾸려면 <a href="${esc(site)}" style="color:#175cd3">구독 페이지</a>에서 같은 이메일로 다시 신청하시면 됩니다. 기존 설정이 새 내용으로 바뀝니다.<br>같은 팀 동료에게도 필요하다면 이 링크를 전달해 주세요: <a href="${esc(forwardUrl())}" style="color:#175cd3">${esc(forwardUrl())}</a></p>
 
       <p style="margin:16px 0 0;color:#98a2b3;font-size:12px;line-height:1.6">이 메일은 구독 신청 확인을 위해 신청하신 주소로 1회 발송됩니다. 이후에는 매주 월요일 리포트 외의 메일을 보내지 않습니다.</p>
 

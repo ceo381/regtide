@@ -3,7 +3,7 @@ import { CATALOG, CATALOG_BY_ID, JURISDICTION_LABEL, productLabel, type Jurisdic
 import { mailFrom, selectAll, supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { COVERAGE, describeSource, sourcesUsed } from "@/lib/source-info";
 import { COLLECT_LOOKBACK_DAYS } from "@/lib/collect";
-import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc } from "@/lib/email-common";
+import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, forwardedNoticeHtml, shareBlockHtml } from "@/lib/email-common";
 
 const IMPACT_LABEL: Record<string, { text: string; color: string }> = {
   high: { text: "즉시 조치", color: "#b42318" },
@@ -118,6 +118,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
   return `<!doctype html><html lang="ko">${EMAIL_HEAD}<body style="margin:0;background:#f9fafb;font-family:${EMAIL_FONT}">
   <div style="max-width:640px;margin:0 auto;padding:32px 20px">
     <div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:32px">
+      ${forwardedNoticeHtml()}
       <p style="margin:0 0 4px;color:#667085;font-size:13px;letter-spacing:.04em">REGTIDE · 주간 리포트</p>
       <h1 style="margin:0 0 8px;font-size:22px;color:#101828">의료기기 규격·인증 업데이트</h1>
       <p style="margin:0 0 6px;color:#475467;font-size:14px">${fmtDate(period.start.toISOString())} ~ ${fmtDate(new Date(period.end.getTime() - 1).toISOString())} 주간 리포트 · 총 ${updates.length}건</p>
@@ -125,6 +126,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       <p style="margin:0 0 16px;color:#667085;font-size:12px;line-height:1.6">모니터링 대상: ${COVERAGE.map((c) => `<strong style="color:#475467">${esc(c.country)}</strong>(${esc(c.agencies)})`).join(" · ")}</p>
       ${productLine}
       ${updates.length ? sections : empty}
+      ${shareBlockHtml()}
       <hr style="border:0;border-top:1px solid #eaecf0;margin:32px 0 16px">
       ${updates.length ? `<p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0 0 12px"><strong style="color:#667085">이번 메일의 출처</strong><br>
       ${sourcesUsed(updates.map((u) => u.source)).map((si) => `${si.url ? `<a href="${esc(si.url)}" style="color:#667085">${esc(si.agency)}</a>` : esc(si.agency)}${si.name ? ` — ${esc(si.name)}` : ""}`).join("<br>")}<br>

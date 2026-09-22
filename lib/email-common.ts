@@ -36,3 +36,22 @@ export function disclaimerFooterHtml(unsubscribeToken: string, lead = "본 메�
       <p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0">
       더 이상 수신을 원치 않으시면 <a href="${esc(unsub)}" style="color:#667085">구독해지</a>를 누른 뒤 확인 화면에서 해지를 선택해 주세요. 구독해지 시 이메일 주소는 즉시 삭제됩니다.</p>`;
 }
+
+/** 전달 유입 채널 코드 — 메일을 전달받은 사람이 이 링크로 구독하면 대시보드 채널 통계에 "fwd" 로 잡힌다 */
+export const FORWARD_REF = "fwd";
+export function forwardUrl() {
+  return `${siteUrl()}/?ref=${FORWARD_REF}`;
+}
+
+/** 메일 상단 — 전달받은 사람을 위한 한 줄 안내 (수신자 본인에게는 거슬리지 않게 작게) */
+export function forwardedNoticeHtml() {
+  return `<p style="margin:0 0 14px;padding:8px 12px;background:#f2f4f7;border-radius:6px;color:#475467;font-size:12px;line-height:1.6">이 메일을 동료에게 전달받으셨나요? <a href="${esc(forwardUrl())}" style="color:#175cd3;font-weight:600">내 품목 기준으로 직접 받기</a> — 무료, 회원가입 없음. 아래 구독해지 링크는 원 수신자 전용이니 누르지 마세요.</p>`;
+}
+
+/** 메일 하단 — 공유 요청 블록 */
+export function shareBlockHtml() {
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 0"><tr><td style="padding:14px 16px;border:1px solid #d0d5dd;border-radius:8px;background:#fcfcfd">
+      <p style="margin:0 0 4px;color:#101828;font-size:14px;font-weight:600">이 리포트가 도움이 되셨다면 같은 팀 동료에게 전달해 주세요.</p>
+      <p style="margin:0;color:#475467;font-size:13px;line-height:1.6">전달받은 분은 아래 링크에서 본인 품목 기준으로 30초 만에 구독할 수 있습니다.<br><a href="${esc(forwardUrl())}" style="color:#175cd3;font-weight:600">${esc(forwardUrl())}</a></p>
+    </td></tr></table>`;
+}

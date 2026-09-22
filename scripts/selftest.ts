@@ -317,6 +317,8 @@ async function main() {
       assert.ok(footer.includes("/api/unsubscribe?token="), "구독해지 링크");
       assert.ok(!/\bAI\b|인공지능|자동 요약|생성형/.test(footer), "면책 문구에 AI 언급 금지");
       assert.ok(!m.html.includes("수신거부"), "'수신거부' 대신 '구독해지' 사용");
+      assert.ok(m.html.includes("/?ref=fwd"), "전달 유입 링크(ref=fwd) 포함");
+      assert.ok(m.html.includes("원 수신자 전용"), "전달받은 사람에게 구독해지 링크 주의 안내");
     }
   });
   await ok("모든 항목에 출처·발표/감지 일시·수집 일시가 표기된다", async () => {
