@@ -31,11 +31,12 @@
 
 | 소스 키 | 대상 | 방식 |
 |---|---|---|
-| `mfds_rss:data0009` | 식약처 입법/행정예고 | RSS |
+| `mfds_rss:data0009` | 식약처 입법/행정예고 | RSS (장애 시 게시판 HTML 대체) |
 | `mfds_rss:data0005` | 식약처 고시전문 | RSS |
 | `mfds_rss:data0013` | 식약처 안내서/지침 | RSS |
 | `mfds_rss:ntc0004` | 식약처 공고 | RSS |
-| `mfds_rss:plc0139` | 의료기기 회수/판매중지 | RSS |
+| `mfds_emedi:recall` | 의료기기 회수/판매중지 (의료기기안심책방) | 검색 화면 HTML |
+| `mfds_emedi:disps` | 의료기기 행정처분 (의료기기안심책방) | 검색 화면 HTML |
 | `law_go_kr` | 국가법령정보센터 법령·행정규칙 | Open API (`LAW_GO_KR_OC` 설정 시 활성) |
 | `federal_register` | FDA 발행 Rule/Proposed Rule/Notice | Federal Register API v1 |
 | `page_watch:eu_md_latest` | EU Commission 의료기기 최신소식·MDCG 문서 | 페이지 스냅샷 비교 |

@@ -1,5 +1,6 @@
 import type { Jurisdiction } from "@/lib/catalog";
 import { MFDS_FEEDS } from "@/lib/sources/mfds-rss";
+import { EMEDI_SOURCES } from "@/lib/sources/mfds-emedi";
 
 /**
  * 출처(수집 소스) 표기용 메타데이터.
@@ -28,6 +29,11 @@ export function describeSource(source: string): SourceInfo {
   if (source.startsWith("mfds_rss:")) {
     const brdId = source.slice("mfds_rss:".length);
     return { agency: "식품의약품안전처 (MFDS)", name: `${MFDS_FEEDS[brdId] ?? brdId} RSS`, url: "https://www.mfds.go.kr", jurisdiction: "KR" };
+  }
+  if (source.startsWith("mfds_emedi:")) {
+    const k = source.slice("mfds_emedi:".length) as keyof typeof EMEDI_SOURCES;
+    const e = EMEDI_SOURCES[k];
+    return { agency: "식품의약품안전처 (MFDS)", name: e ? e.name : `의료기기안심책방 ${k}`, url: e?.url ?? "https://emedi.mfds.go.kr", jurisdiction: "KR" };
   }
   return STATIC[source] ?? { agency: source, name: "", url: "", jurisdiction: "INTL" };
 }

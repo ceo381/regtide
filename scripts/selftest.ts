@@ -18,7 +18,9 @@ import { collectUpdates } from "@/lib/collect";
 import { classifyPending } from "@/lib/classify";
 import { sendWeeklyDigests, weekWindow, type Mailer } from "@/lib/digest";
 import { pageWatchAdapter } from "@/lib/sources/page-watch";
-import { mfdsRssAdapter } from "@/lib/sources/mfds-rss";
+import { MFDS_FEEDS, mfdsRssAdapter, __mfdsRssInternals } from "@/lib/sources/mfds-rss";
+import { MFDS_BOARD_BY_FEED, looksLikeRss, parseBoardList } from "@/lib/sources/mfds-board";
+import { DISPS_SPEC, RECALL_SPEC, emediAdapter, parseEmediDetail, parseEmediTable, type EmediHttp } from "@/lib/sources/mfds-emedi";
 import { itemsOf } from "@/lib/sources/types";
 import { allAdapters, type SourceAdapter } from "@/lib/sources";
 import { describeSource } from "@/lib/source-info";
@@ -627,8 +629,113 @@ async function main() {
     assert.deepEqual(sortRows(rows, (r) => r.d, "desc").map((r) => r.d), ["2026-09-10", "2026-09-02", "2026-09-01", null]);
   });
 
+  await ok("식약처 RSS 장애 → 게시판 HTML 대체 수집 (같은 URL 형식으로 중복 없음, 경고 표시, 대응 게시판 없으면 오류)", async () => {
+    const errPage = `<!DOCTYPE html><html><head><title>식품의약품안전처</title></head><body><p>일시적으로 서비스를 이용하실 수 없습니다.</p></body></html>`;
+    assert.equal(looksLikeRss(errPage), false);
+    assert.equal(looksLikeRss(`<?xml version="1.0"?><rss version="2.0"><channel><item><title>x</title></item></channel></rss>`), true);
+    assert.equal(looksLikeRss(""), false);
+    const li = (seq: string, title: string, date: string) => `<li><div class="num">1</div><div class="center_column"><a href="./view.do?seq=${seq}&amp;srchFr=&amp;page=1" class="title" title="자세히보기">  \n ${title} \n </a><div class="winfo"><p>담당부서 | 의료기기정책과</p></div></div><div class="right_column">${date}</div></li>`;
+    const page = (items: string) => `<html><body><div class="bbs_list01"><ul>${items}</ul></div><div class="bbs_page"><ul><li class="on"><b>1</b></li></ul></div></body></html>`;
+    const p1 = page(li("44298", "「의료기기법 시행규칙」 일부개정령(안) 입법예고", "2026-09-14") + li("44289", "「건강기능식품 기준·규격」 행정예고", "2026-09-13") + li("44280", "의료기기 허가·심사 규정 개정고시(안) 행정예고", "2026-08-01"));
+    const rows = parseBoardList(p1, 209);
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0].url, "https://www.mfds.go.kr/brd/m_209/view.do?seq=44298", "RSS <link> 와 같은 형식이어야 중복 저장이 안 됨");
+    assert.equal(rows[0].title, "「의료기기법 시행규칙」 일부개정령(안) 입법예고");
+    assert.equal(rows[0].date?.toISOString(), "2026-09-13T15:00:00.000Z", "KST 자정 기준");
+    const fetched: string[] = [];
+    const fakeFetch = async (url: string) => { fetched.push(url); return url.endsWith("page=1") ? p1 : page(li("44100", "의료기기 옛날 공고", "2026-07-01")); };
+    const r = await __mfdsRssInternals.fallbackToBoard("mfds_rss:data0009", "data0009", new Date("2026-09-01T00:00:00Z"), errPage, fakeFetch);
+    assert.equal(r.items.length, 1, "since 이후 + 의료기기 제목만");
+    assert.equal(r.items[0].externalId, "https://www.mfds.go.kr/brd/m_209/view.do?seq=44298");
+    assert.equal(r.rawCount, 4, "1페이지에 since 이후 항목이 있으므로 2페이지까지 읽음 (3+1)");
+    assert.ok(r.warnings?.[0].includes("일시 장애 페이지") && r.warnings[0].includes("m_209"), "대체 수집 사실이 경고로 남아야 함: " + r.warnings?.[0]);
+    assert.deepEqual(fetched, ["https://www.mfds.go.kr/brd/m_209/list.do?page=1", "https://www.mfds.go.kr/brd/m_209/list.do?page=2"], "2페이지가 전부 since 이전이므로 거기서 중단");
+    const r2 = await __mfdsRssInternals.fallbackToBoard("mfds_rss:data0009", "data0009", new Date("2026-07-15T00:00:00Z"), errPage, fakeFetch);
+    assert.equal(r2.items.length, 2, "2페이지의 7/1 항목은 since 이전이라 제외, 1페이지 의료기기 2건");
+    assert.ok(fetched.length >= 4);
+    // 대응 게시판이 없는 피드는 오류 (상태 점검 errors 로 올라감)
+    await assert.rejects(() => __mfdsRssInternals.fallbackToBoard("mfds_rss:data0006", "data0006", new Date(), errPage, fakeFetch), /대체 게시판 없음/);
+    assert.ok(!("plc0139" in MFDS_FEEDS) && !("plc0168" in MFDS_FEEDS), "회수·행정처분 RSS 는 emedi 로 이관");
+    for (const k of Object.keys(MFDS_BOARD_BY_FEED)) assert.ok(k in MFDS_FEEDS, `게시판 대응표의 ${k} 는 RSS 피드 목록에 있어야 함`);
+    // 어댑터 경로: fetchText 가 오류 페이지를 돌려주면 자동으로 게시판으로
+    globalThis.fetch = (async (url: string) => new Response(String(url).includes("/rss/") ? errPage : p1, { status: 200 })) as typeof fetch;
+    const viaAdapter = await mfdsRssAdapter("data0009").fetch(new Date("2026-09-01T00:00:00Z"));
+    assert.equal(itemsOf(viaAdapter).length, 1);
+    assert.ok(!Array.isArray(viaAdapter) && viaAdapter.warnings?.length, "어댑터 결과에 경고 포함");
+    globalThis.fetch = realFetch;
+  });
+  await ok("의료기기안심책방(emedi) 회수·행정처분 수집: 표·상세 해석, 총 건수 기준 페이징, 상세 실패 시 목록 정보로 저장", async () => {
+    const link = (id: string) => `/recall/view/MNU20265?startPlanSbmsnDt=2026-08-20&amp;mid=MNU20265&amp;pageNum=1&amp;deptReceiptNo=${id}`;
+    const tr = (id: string, cells: string[]) => `<tr class="cursor">${cells.map((c) => `<td> <a href="${link(id)}">${c}</a> </td>`).join("")}</tr>`;
+    const table = (total: number, rows: string) => `<html><body><p class="page">총 <b>${total}</b>건</p><table><thead><tr><th>순번</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+    const p1 = table(12, Array.from({ length: 10 }, (_, i) => tr(`2026${String(i).padStart(8, "0")}`, [String(i + 1), `업체${i}`, `품목${i}`, `수인 ${i}`, "영업자 회수보고", "진행중", i === 0 ? "2026-09-22" : "2026-09-07"])).join(""));
+    const p2 = table(12, tr("202600000010", ["11", "업체10", "품목10", "수인 10", "정부 회수보고", "완료", "2026-09-17"]) + tr("202600000011", ["12", "업체11", "품목11", "수인 11", "영업자 회수보고", "진행중", "2026-08-01"]));
+    const parsed = parseEmediTable(p1, "deptReceiptNo");
+    assert.equal(parsed.total, 12);
+    assert.equal(parsed.rows.length, 10);
+    assert.equal(parsed.rows[0].id, "202600000000");
+    assert.equal(parsed.rows[0].cells[2], "품목0");
+    const detailHtml = `<table><tr><th>업체명(업허가번호)</th><td>업체0 (제 1 호)</td></tr><tr><th>회수사유</th><td>팁이 <b>파손될</b> 가능성이 있음</td></tr><tr><th>위해성정도</th><td>「의료기기법」 시행규칙 \n 제52조제2항제1호</td></tr><tr><th>회수사유</th><td>중복</td></tr></table>`;
+    const d = parseEmediDetail(detailHtml);
+    assert.equal(d["회수사유"], "팁이 파손될 가능성이 있음", "첫 값 유지, 태그 제거");
+    assert.equal(d["위해성정도"], "「의료기기법」 시행규칙 제52조제2항제1호");
+    const calls: { m: string; path: string; form?: Record<string, string> }[] = [];
+    const http: EmediHttp = {
+      async get(path) { calls.push({ m: "GET", path }); if (path.includes("deptReceiptNo=202600000001")) throw new Error("timeout"); return path.includes("/view/") ? detailHtml : "<html>list</html>"; },
+      async post(path, form) { calls.push({ m: "POST", path, form }); return form.pageNum === "1" ? p1 : p2; },
+    };
+    const since = new Date("2026-09-08T00:00:00Z");
+    const r = await emediAdapter(RECALL_SPEC, http).fetch(since);
+    const items = itemsOf(r);
+    assert.equal(calls.filter((c) => c.m === "POST").length, 2, "총 12건 → 2페이지까지만");
+    assert.equal(calls.find((c) => c.m === "POST")!.form!.searchYn, "true");
+    assert.equal(calls.filter((c) => c.m === "POST")[1].form!.searchYn, "", "2페이지부터는 searchYn 비움");
+    assert.deepEqual(items.map((i) => i.externalId).sort(), ["202600000000", "202600000010"], "보고일자가 since 이후인 것만 (9/7 은 제외, 8/1 제외)");
+    const first = items.find((i) => i.externalId === "202600000000")!;
+    assert.equal(first.source, "mfds_emedi:recall");
+    assert.equal(first.title, "[회수·판매중지] 품목0 — 업체0");
+    assert.equal(first.url, "https://emedi.mfds.go.kr/recall/view/MNU20265?mid=MNU20265&deptReceiptNo=202600000000");
+    assert.ok(first.raw?.includes("회수사유: 팁이 파손될 가능성이 있음") && first.raw.includes("보고일자: 2026-09-22"));
+    assert.equal(first.publishedAt?.toISOString(), "2026-09-21T15:00:00.000Z");
+    assert.ok(!Array.isArray(r) && r.rawCount === 12 && !(r.warnings ?? []).length, "상세 실패는 since 이전 항목이라 조회하지 않음 → 경고 없음");
+    // 상세 조회 실패 → 항목은 남고 경고
+    const http2: EmediHttp = { async get(path) { if (path.includes("/view/")) throw new Error("500"); return ""; }, async post(_p, form) { return form.pageNum === "1" ? p1 : p2; } };
+    const r2 = await emediAdapter(RECALL_SPEC, http2).fetch(since);
+    assert.equal(itemsOf(r2).length, 2, "상세 실패해도 목록 정보로 항목 유지 (누락 방지)");
+    assert.ok(!Array.isArray(r2) && r2.warnings?.[0].includes("상세 페이지 2건 조회 실패"), String(!Array.isArray(r2) && r2.warnings));
+    // 표를 해석하지 못하면 오류 (구조 변경을 조용히 0건으로 넘기지 않음)
+    const http3: EmediHttp = { async get() { return ""; }, async post() { return "<html><body>점검 중</body></html>"; } };
+    await assert.rejects(() => emediAdapter(RECALL_SPEC, http3).fetch(since), /해석하지 못함/);
+    // "조회된 결과가 없습니다" 는 정상 0건
+    const http4: EmediHttp = { async get() { return ""; }, async post() { return "<html><body><table><tbody><tr><td>조회된 결과가 없습니다.</td></tr></tbody></table></body></html>"; } };
+    assert.equal(itemsOf(await emediAdapter(RECALL_SPEC, http4).fetch(since)).length, 0);
+    // 행정처분: 공개일자 기준, 상세의 처분명(전체)로 제목
+    const dlink = (id: string) => `/disps/view/MNU20266?dispsEndDate=2026-09-23&amp;searchYn=true&amp;pageNum=1&amp;&amp;portalAdmDispsSeq=${id}`;
+    const dtr = (id: string, cells: string[]) => `<tr>${cells.map((c) => `<td><a href="${dlink(id)}">${c}</a></td>`).join("")}</tr>`;
+    const dp = `<html><body><p class="page">총 <b>2</b>건</p><table><tbody>${dtr("3422", ["27", "승원산업", "-", "전 제조업무정지 3개월(2026. 9. 2...", "2026-09-02", "2026-09-21"])}${dtr("3400", ["26", "옛날업체", "-", "경고", "2026-08-01", "2026-08-05"])}</tbody></table></body></html>`;
+    const ddetail = `<table><tr><th>업체명</th><td>승원산업</td></tr><tr><th>업종명</th><td>제조업</td></tr><tr><th>처분명</th><td>전 제조업무정지 3개월(2026. 9. 21. ~ 2026. 12. 20.)</td></tr><tr><th>처분기간</th><td>2026-09-21 ~ 2026-12-20</td></tr><tr><th>위반내용</th><td>품질책임자 미지정(2차)</td></tr></table>`;
+    const dhttp: EmediHttp = { async get(path) { return path.includes("/view/") ? ddetail : ""; }, async post(path, form) { calls.push({ m: "POST", path, form }); return dp; } };
+    const dr = itemsOf(await emediAdapter(DISPS_SPEC, dhttp).fetch(since));
+    assert.equal(dr.length, 1, "공개일자 8/5 건은 since 이전");
+    assert.equal(dr[0].title, "[행정처분] 전 제조업무정지 3개월(2026. 9. 21. ~ 2026. 12. 20.) — 승원산업");
+    assert.equal(dr[0].externalId, "3422");
+    assert.equal(dr[0].url, "https://emedi.mfds.go.kr/disps/view/MNU20266?portalAdmDispsSeq=3422");
+    assert.equal(dr[0].publishedAt?.toISOString(), "2026-09-20T15:00:00.000Z", "공개일자 기준");
+    assert.ok(dr[0].raw?.includes("위반내용: 품질책임자 미지정(2차)"));
+    const dform = calls.filter((c) => c.path === "/disps/MNU20266")[0].form!;
+    assert.ok(dform.dispsStartDate < "2026-08-01", "처분일 검색은 since 보다 넉넉히 앞당김 (공개 지연 흡수): " + dform.dispsStartDate);
+    // 소스 메타·카탈로그 연결
+    assert.equal(describeSource("mfds_emedi:recall").name, "의료기기안심책방 회수/판매중지");
+    assert.equal(describeSource("mfds_emedi:disps").jurisdiction, "KR");
+    const keys = allAdapters().map((a) => a.key);
+    assert.ok(keys.includes("mfds_emedi:recall") && keys.includes("mfds_emedi:disps") && !keys.includes("mfds_rss:plc0139"));
+    const { CATALOG } = await import("@/lib/catalog");
+    const vig = CATALOG.find((c) => c.id === "kr-vigilance")!;
+    assert.ok(vig.sources.includes("mfds_emedi:recall") && vig.sources.includes("mfds_emedi:disps"));
+  });
+
   globalThis.fetch = realFetch;
-  console.log(`\n${process.exitCode ? "실패한 항목이 있습니다." : `모든 검증 통과 (${passed}개)`}\n`);
+  console.log(`\\n${process.exitCode ? "실패한 항목이 있습니다." : `모든 검증 통과 (${passed}개)`}\n`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

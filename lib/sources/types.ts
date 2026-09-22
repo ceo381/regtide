@@ -2,7 +2,7 @@ import type { Jurisdiction } from "@/lib/catalog";
 
 /** 수집 어댑터가 반환하는 정규화된 업데이트 항목 */
 export interface RawUpdate {
-  source: string;        // 예: "mfds_rss:data0009"
+  source: string;        // 예: "mfds_rss:data0009", "mfds_emedi:recall"
   externalId: string;    // 소스 내 고유 키
   jurisdiction: Jurisdiction;
   title: string;
