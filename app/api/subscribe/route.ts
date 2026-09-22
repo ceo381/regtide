@@ -50,11 +50,15 @@ export async function POST(req: NextRequest) {
 
   const sb = supabaseAdmin();
   // 신규 구독인지 확인 (기존 구독자의 설정 변경이면 마일스톤 알림 대상이 아님)
-  const { data: existing } = await sb.from("subscribers").select("id, ref").eq("email", email).maybeSingle();
+  const { data: existing } = await sb.from("subscribers").select("id, ref, landed_at, referrer").eq("email", email).maybeSingle();
   const isNew = !existing;
-  // 유입 채널은 최초 유입(first-touch)만 기록. 기존 구독자가 설정을 바꿔도 처음 채널을 유지
-  const keepRef = existing?.ref as string | undefined;
-  const channel = keepRef ? {} : { ref: ref ?? null, landed_at: landedAt ?? null, referrer: referrer ?? null };
+  // 유입 채널은 최초 유입(first-touch)만 기록. 기존 값이 있으면 필드별로 유지하고, 비어 있던 필드만 채운다
+  const ex = (existing ?? {}) as { ref?: string | null; landed_at?: string | null; referrer?: string | null };
+  const channel = {
+    ref: ex.ref ?? ref ?? null,
+    landed_at: ex.landed_at ?? landedAt ?? null,
+    referrer: ex.referrer ?? referrer ?? null,
+  };
 
   const { error } = await sb.from("subscribers").upsert(
     {

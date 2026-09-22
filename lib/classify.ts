@@ -147,3 +147,14 @@ export async function classifyPending(limit = 500): Promise<ClassifyResult> {
   }
   return result;
 }
+
+/** 미분류가 남지 않을 때까지 반복 (한 번에 limit 건씩). 크론·대시보드에서 사용 */
+export async function classifyAll(limit = 500, maxRounds = 10): Promise<ClassifyResult> {
+  const total: ClassifyResult = { classified: 0, matched: 0, errors: [] };
+  for (let i = 0; i < maxRounds; i++) {
+    const r = await classifyPending(limit);
+    total.classified += r.classified; total.matched += r.matched; total.errors.push(...r.errors);
+    if (r.classified < limit) break;
+  }
+  return total;
+}

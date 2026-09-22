@@ -33,7 +33,9 @@ export function mfdsRssAdapter(brdId: string): SourceAdapter {
       const doc = parser.parse(xml);
       const items = toArray(doc?.rss?.channel?.item);
       const out: RawUpdate[] = [];
+      let rawCount = 0;
       for (const it of items) {
+        rawCount++;
         const title = text(it.title);
         const link = text(it.link);
         const pub = it.pubDate ? new Date(text(it.pubDate)) : undefined;
@@ -52,7 +54,7 @@ export function mfdsRssAdapter(brdId: string): SourceAdapter {
           raw: truncate(body),
         });
       }
-      return out;
+      return { items: out, rawCount };
     },
   };
 }

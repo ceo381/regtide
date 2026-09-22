@@ -36,11 +36,20 @@ export const lawGoKrAdapter: SourceAdapter = {
     const failures: string[] = [];
     let okCount = 0;
 
-    for (const target of ["law", "admrul"] as const) {
-      for (const q of QUERIES) {
+    const jobs: { target: "law" | "admrul"; q: string }[] = [];
+    for (const target of ["law", "admrul"] as const) for (const q of QUERIES) jobs.push({ target, q });
+    // 6개 질의를 병렬로 (순차 실행 시 최악 120초 → 크론 시간 제한 위험)
+    const results = await Promise.all(jobs.map(async ({ target, q }) => {
+      {
         const params = new URLSearchParams({ OC: oc, target, type: "JSON", query: q, display: "100", sort: "ddes" });
-        const res = await fetch(`https://www.law.go.kr/DRF/lawSearch.do?${params}`, { cache: "no-store", headers: { accept: "application/json,text/plain,*/*" } });
-        if (!res.ok) { failures.push(`${target}/${q}: HTTP ${res.status}`); continue; }
+        // 신청 시 등록한 도메인을 Referer 로 실어 보냄 (도메인 검사를 하는 경우 대비). LAW_GO_KR_REFERER 로 덮어쓸 수 있음
+        const referer = (process.env.LAW_GO_KR_REFERER || process.env.NEXT_PUBLIC_SITE_URL || "https://regtide-pi.vercel.app").replace(/\/?$/, "/");
+        const res = await fetch(`https://www.law.go.kr/DRF/lawSearch.do?${params}`, {
+          cache: "no-store",
+          headers: { accept: "application/json,text/plain,*/*", referer, origin: referer.replace(/\/$/, ""), "user-agent": "Mozilla/5.0 (compatible; RegTide/1.0; +" + referer + ")" },
+          signal: AbortSignal.timeout(20_000),
+        });
+        if (!res.ok) { failures.push(`${target}/${q}: HTTP ${res.status}`); return null; }
         const text = await res.text();
         let json: Record<string, unknown> | null = null;
         try { json = JSON.parse(text) as Record<string, unknown>; } catch { json = null; }
@@ -48,15 +57,23 @@ export const lawGoKrAdapter: SourceAdapter = {
           // OC 미승인·오타 시 law.go.kr 은 200 으로 HTML 안내 페이지를 돌려준다
           const hint = /인증|승인|권한|OC/.test(text) ? "OC(인증키) 미승인 또는 오타 가능성" : "JSON 이 아닌 응답";
           failures.push(`${target}/${q}: ${hint} — ${text.replace(/\s+/g, " ").slice(0, 100)}`);
-          continue;
+          return null;
         }
         const root = (json.LawSearch ?? json.AdmRulSearch ?? json) as Record<string, unknown>;
         const rows = root[target === "law" ? "law" : "admrul"];
         if (rows === undefined && !("totalCnt" in root)) {
           failures.push(`${target}/${q}: 알 수 없는 응답 구조 — ${JSON.stringify(json).slice(0, 100)}`);
-          continue;
+          return null;
         }
         okCount++;
+        return { target, rows };
+      }
+    }));
+
+    for (const r of results) {
+      if (!r) continue;
+      const { target, rows } = r;
+      {
         const list: Record<string, unknown>[] = Array.isArray(rows) ? rows : rows ? [rows as Record<string, unknown>] : [];
         for (const r of list) {
           const id = String(r["법령일련번호"] ?? r["행정규칙일련번호"] ?? r["법령ID"] ?? "");

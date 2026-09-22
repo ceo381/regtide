@@ -1,6 +1,6 @@
 import { Resend } from "resend";
 import { CATALOG, CATALOG_BY_ID, JURISDICTION_LABEL, type Jurisdiction } from "@/lib/catalog";
-import { supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
+import { mailFrom, selectAll, supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { COVERAGE, describeSource, sourcesUsed } from "@/lib/source-info";
 import { COLLECT_LOOKBACK_DAYS } from "@/lib/collect";
 
@@ -23,34 +23,40 @@ function fmtDate(s: string | null) {
 function fmtDateTime(s: string | Date | null) {
   if (!s) return "";
   const d = new Date(s);
-  const dateOnly = d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+  // UTC 자정(Federal Register 등 날짜만 주는 소스) 또는 KST 자정(국가법령정보 공포일자)이면 시각 정보가 없는 값
+  const h = d.getUTCHours(), m = d.getUTCMinutes(), sec = d.getUTCSeconds();
+  const dateOnly = m === 0 && sec === 0 && (h === 0 || h === 15);
   if (dateOnly) return fmtDate(d.toISOString());
   return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) + " KST";
 }
 
+/** 발송 후보로 삼는 최대 되돌아보기 일수. 매일 수집되므로 지난 발송 이후 7일 + 여유 */
+export const CANDIDATE_DAYS = 14;
+
 /**
  * 주간 집계 구간
- *  - start/end : 이번 발송에 포함할 updates 의 created_at 범위.
- *                크론은 월요일 09:00(KST)에 "수집 → 분류 → 발송"을 한 번에 실행하므로,
- *                그 실행에서 방금 저장된 항목(created_at = 월요일 09:00)이 포함되어야 한다.
- *                따라서 start = 이번 주 월요일 00:00(KST), end = 지금. 지난주 월요일 실행분(created_at = 지난주 월 09:00)은
- *                start 이전이라 자연히 제외되어 중복 발송이 없다.
+ *  - start/end : 이번 발송의 "후보" updates 의 created_at 범위 = 최근 CANDIDATE_DAYS 일.
+ *                수집이 매일 돌기 때문에(일일 크론) 항목의 created_at 은 한 주에 걸쳐 흩어져 있다.
+ *                따라서 "이번 주 월요일 이후"로 자르면 화~일요일에 수집된 항목이 전부 빠진다.
+ *                대신 넉넉히 14일을 후보로 잡고, **이미 그 구독자에게 보낸 항목(deliveries.update_ids)은 제외**해서
+ *                누락도 중복도 없게 한다.
  *  - weekStart  : 중복 발송 방지 키(deliveries.week_start). 이번 주 월요일 날짜.
  *  - periodStart/periodEnd : 이메일 상단에 표시할 "지난 한 주" 기간(지난주 월 ~ 일). 표시용.
  */
 export function weekWindow(now = new Date(), opts: { recent?: boolean } = {}) {
-  if (opts.recent) {
-    // 테스트용: 최근 8일 (주중에 파이프라인을 돌려볼 때 사용)
-    const start = new Date(now.getTime() - 8 * 86400_000);
-    return { start, end: now, weekStart: now.toISOString().slice(0, 10), periodStart: start, periodEnd: now };
-  }
   const kst = new Date(now.getTime() + 9 * 3600_000);
   const day = kst.getUTCDay(); // 0=일
   const diffToMonday = (day + 6) % 7;
   const thisMondayKst = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() - diffToMonday); // 월 00:00 KST (KST 눈금)
   const thisMondayUtc = new Date(thisMondayKst - 9 * 3600_000);
+  const start = new Date(now.getTime() - CANDIDATE_DAYS * 86400_000);
+  if (opts.recent) {
+    // 테스트용: 표시 기간을 최근 8일로 (중복 방지 키는 그대로 이번 주 월요일)
+    const ps = new Date(now.getTime() - 8 * 86400_000);
+    return { start, end: now, weekStart: new Date(thisMondayKst).toISOString().slice(0, 10), periodStart: ps, periodEnd: now };
+  }
   return {
-    start: thisMondayUtc,
+    start,
     end: now,
     weekStart: new Date(thisMondayKst).toISOString().slice(0, 10),
     periodStart: new Date(thisMondayUtc.getTime() - 7 * 86400_000),
@@ -70,8 +76,8 @@ export function relevantUpdates(sub: SubscriberRow, updates: UpdateRow[]): Updat
 
 export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], period: { start: Date; end: Date; generatedAt?: Date }) {
   const generatedAt = period.generatedAt ?? new Date();
-  // 수집 기간: 크론 실행 시점에서 COLLECT_LOOKBACK_DAYS 일 전 ~ 실행 시점 (각 기관이 이 기간에 발표·게재한 항목을 대상으로 함)
-  const collectSince = new Date(generatedAt.getTime() - COLLECT_LOOKBACK_DAYS * 86400_000);
+  // 수집 기간 표기: 지난 발송(7일 전) 이후 매일 수집. 이전 메일에 안내한 항목은 제외됨
+  const collectSince = new Date(generatedAt.getTime() - 7 * 86400_000);
   const site = process.env.NEXT_PUBLIC_SITE_URL ?? "";
   const unsub = `${site}/api/unsubscribe?token=${encodeURIComponent(sub.unsubscribe_token)}`;
   const byJ: Partial<Record<Jurisdiction, UpdateRow[]>> = {};
@@ -120,7 +126,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       <p style="margin:0 0 4px;color:#667085;font-size:13px;letter-spacing:.04em">REGTIDE · 주간 리포트</p>
       <h1 style="margin:0 0 8px;font-size:22px;color:#101828">의료기기 규격·인증 업데이트</h1>
       <p style="margin:0 0 6px;color:#475467;font-size:14px">${fmtDate(period.start.toISOString())} ~ ${fmtDate(new Date(period.end.getTime() - 1).toISOString())} 주간 리포트 · 총 ${updates.length}건</p>
-      <p style="margin:0 0 6px;color:#667085;font-size:12px;line-height:1.6"><strong style="color:#475467">정보 수집 기간</strong>: ${fmtDateTime(collectSince)} ~ ${fmtDateTime(generatedAt)} (이 기간에 각 기관이 발표·게재한 항목, ${COLLECT_LOOKBACK_DAYS}일) · <strong style="color:#475467">리포트 생성</strong>: ${fmtDateTime(generatedAt)}</p>
+      <p style="margin:0 0 6px;color:#667085;font-size:12px;line-height:1.6"><strong style="color:#475467">정보 수집 기간</strong>: ${fmtDateTime(collectSince)} ~ ${fmtDateTime(generatedAt)} (매일 08:00 KST 수집, 각 기관이 최근 ${COLLECT_LOOKBACK_DAYS}일 내 발표·게재한 항목 기준, 이전 메일에 안내한 항목은 제외) · <strong style="color:#475467">리포트 생성</strong>: ${fmtDateTime(generatedAt)}</p>
       <p style="margin:0 0 16px;color:#667085;font-size:12px;line-height:1.6">모니터링 대상: ${COVERAGE.map((c) => `<strong style="color:#475467">${esc(c.country)}</strong>(${esc(c.agencies)})`).join(" · ")}</p>
       ${productLine}
       ${updates.length ? sections : empty}
@@ -132,9 +138,35 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       본 메일은 식약처, 국가법령정보센터, 미국 Federal Register, EU Commission, ISO/IEC 등 공개된 규제 정보 소스를 자동으로 수집·분류하여 제공하는 <strong>참고용 정보</strong>입니다. 법률·규제 자문이 아니며 법적 효력이 없습니다. 발췌문은 원문의 일부이므로 정확한 내용과 시행일은 반드시 원문 링크에서 확인하시기 바랍니다.<br>
       수집 소스의 변경, 사이트 접근 제한, 분류 규칙의 한계 등으로 일부 변경 사항이 누락되거나 지연되거나 관련 없는 항목이 포함될 수 있습니다. 본 정보를 바탕으로 한 인허가·품질·사업상 판단과 그 결과에 대한 책임은 이용자에게 있으며, RegTide 는 이에 대해 책임을 지지 않습니다. 각 원문의 저작권은 해당 발행 기관에 있습니다. 전문은 <a href="${esc(site)}/disclaimer" style="color:#667085">이용 안내 및 면책조항</a>을 참고하세요.</p>
       <p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0">
-      더 이상 수신을 원치 않으시면 <a href="${esc(unsub)}" style="color:#667085">구독해지</a>를 눌러주세요. 구독해지 시 이메일 주소는 즉시 삭제됩니다.</p>
+      더 이상 수신을 원치 않으시면 <a href="${esc(unsub)}" style="color:#667085">구독해지</a>를 누른 뒤 확인 화면에서 해지를 선택해 주세요. 구독해지 시 이메일 주소는 즉시 삭제됩니다.</p>
     </div>
   </div></body></html>`;
+}
+
+/** 동시 발송 방지 잠금 (수동 호출과 크론이 겹치는 경우). page_snapshots 에 잠금 행을 두고 10분 지나면 만료 */
+const SEND_LOCK_KEY = "admin:send_lock";
+const SEND_LOCK_MS = 10 * 60_000;
+async function acquireSendLock(sb: ReturnType<typeof supabaseAdmin>): Promise<boolean> {
+  const { data } = await sb.from("page_snapshots").select("content").eq("source_key", SEND_LOCK_KEY).maybeSingle();
+  const prev = (data as { content?: string } | null)?.content;
+  if (prev === undefined || prev === null) {
+    // 잠금 행이 없으면 insert 로 생성 — 동시에 두 실행이 들어오면 PK 충돌로 한쪽만 성공
+    const { error } = await sb.from("page_snapshots").insert({ source_key: SEND_LOCK_KEY, content_hash: "lock", content: String(Date.now()), fetched_at: new Date().toISOString() });
+    return !error;
+  }
+  const held = Number(prev) || 0;
+  if (held && Date.now() - held < SEND_LOCK_MS) return false;
+  // compare-and-swap: 내가 읽은 값 그대로일 때만 갱신 → 동시 진입 시 한쪽만 성공
+  const { data: sw, error } = await sb
+    .from("page_snapshots")
+    .update({ content: String(Date.now()), content_hash: "lock", fetched_at: new Date().toISOString() })
+    .eq("source_key", SEND_LOCK_KEY)
+    .eq("content", prev)
+    .select("source_key");
+  return !error && Array.isArray(sw) && sw.length === 1;
+}
+async function releaseSendLock(sb: ReturnType<typeof supabaseAdmin>) {
+  await sb.from("page_snapshots").upsert({ source_key: SEND_LOCK_KEY, content_hash: "lock", content: "0", fetched_at: new Date().toISOString() }, { onConflict: "source_key" });
 }
 
 export interface SendResult {
@@ -164,8 +196,9 @@ export function resendMailer(): Mailer {
       if (error) throw new Error(error.message);
       // SDK 버전에 따라 data 가 { data: [...] } 또는 [...] 형태
       const arr = (Array.isArray(data) ? data : (data as { data?: { id: string }[] } | null)?.data) ?? [];
-      if (arr.length !== msgs.length) throw new Error(`batch 응답 개수 불일치 (${arr.length}/${msgs.length})`);
-      return arr.map((d) => ({ id: d?.id }));
+      // 개수가 어긋나도 Resend 는 이미 접수했으므로 예외를 던지지 않는다 (던지면 개별 재발송 → 중복). id 만 비워둔다
+      if (arr.length !== msgs.length) console.warn(`[digest] batch 응답 개수 불일치 (${arr.length}/${msgs.length}) — id 없이 기록`);
+      return msgs.map((_, i) => ({ id: arr[i]?.id }));
     },
   };
 }
@@ -185,18 +218,10 @@ export async function sendWeeklyDigests(
   const sb = supabaseAdmin();
   const { start, end, weekStart, periodStart, periodEnd } = weekWindow(now, { recent: opts.recent });
 
-  const { data: updatesData, error: uErr } = await sb
-    .from("updates")
-    .select("*")
-    .not("classified_at", "is", null)
-    .gte("created_at", start.toISOString())
-    .lte("created_at", end.toISOString());
-  if (uErr) throw uErr;
-  const updates = (updatesData ?? []) as UpdateRow[];
-
-  const { data: subsData, error: sErr } = await sb.from("subscribers").select("*").eq("active", true);
-  if (sErr) throw sErr;
-  let subs = (subsData ?? []) as SubscriberRow[];
+  const updates = await selectAll<UpdateRow>(() =>
+    sb.from("updates").select("*").not("classified_at", "is", null).gte("created_at", start.toISOString()).lte("created_at", end.toISOString()).order("created_at", { ascending: true }).order("id", { ascending: true }),
+  );
+  let subs = await selectAll<SubscriberRow>(() => sb.from("subscribers").select("*").eq("active", true).order("created_at", { ascending: true }).order("id", { ascending: true }));
 
   const testOnly = opts.only?.trim().toLowerCase();
   if (testOnly) {
@@ -214,15 +239,25 @@ export async function sendWeeklyDigests(
     ];
   }
 
-  const from = process.env.MAIL_FROM ?? "RegTide <onboarding@resend.dev>";
+  const from = mailFrom();
   const result: SendResult = { sent: 0, skipped: 0, failed: [] };
   const nowIso = () => new Date().toISOString();
 
-  // 이번 주 발송 기록을 한 번에 조회 (구독자 수만큼 쿼리하지 않도록)
+  // 발송 기록을 한 번에 조회 (구독자 수만큼 쿼리하지 않도록)
+  //  - alreadySent : 이번 주에 이미 성공 발송한 구독자 (크론 재실행 안전)
+  //  - deliveredIds: 구독자별로 과거 메일에 이미 실린 update id (매일 수집 체계에서 중복 안내 방지)
   const alreadySent = new Set<string>();
+  const deliveredIds = new Map<string, Set<string>>();
   if (!testOnly) {
-    const { data: dels } = await sb.from("deliveries").select("subscriber_id, status").eq("week_start", weekStart);
-    for (const d of (dels ?? []) as { subscriber_id: string; status: string }[]) if (d.status === "sent") alreadySent.add(d.subscriber_id);
+    const sinceDel = new Date(now.getTime() - (CANDIDATE_DAYS + 7) * 86400_000).toISOString();
+    const dels = await selectAll<{ subscriber_id: string; status: string; week_start: string; update_ids: string[] }>(() =>
+      sb.from("deliveries").select("subscriber_id, status, week_start, update_ids").eq("status", "sent").gte("sent_at", sinceDel).order("sent_at", { ascending: true }).order("id", { ascending: true }),
+    );
+    for (const d of dels) {
+      if (d.week_start === weekStart) alreadySent.add(d.subscriber_id);
+      if (!deliveredIds.has(d.subscriber_id)) deliveredIds.set(d.subscriber_id, new Set());
+      for (const id of d.update_ids ?? []) deliveredIds.get(d.subscriber_id)!.add(id);
+    }
   }
 
   // 테스트 발송은 deliveries 에 기록하지 않는다 (정기 발송의 중복 방지 키를 소모하지 않도록)
@@ -240,7 +275,8 @@ export async function sendWeeklyDigests(
   const emptyRows: Record<string, unknown>[] = [];
   for (const sub of subs) {
     if (alreadySent.has(sub.id)) { result.skipped++; continue; }
-    const mine = relevantUpdates(sub, updates);
+    const seenIds = deliveredIds.get(sub.id);
+    const mine = relevantUpdates(sub, seenIds ? updates.filter((u) => !seenIds.has(u.id)) : updates);
     if (mine.length === 0 && !opts.sendEmpty) {
       emptyRows.push({ subscriber_id: sub.id, update_ids: [], status: "skipped_empty", error: null });
       result.skipped++;
@@ -259,47 +295,53 @@ export async function sendWeeklyDigests(
   }
   await recordMany(emptyRows);
 
-  // 2) 발송: batch 가 가능하면 50통씩 한 번에, 실패한 묶음은 개별 발송으로 재시도
-  const sentRows: Record<string, unknown>[] = [];
-  const failedRows: Record<string, unknown>[] = [];
-  const sentIds: string[] = [];
+  // 2) 발송: batch 가 가능하면 50통씩 한 번에, 실패한 묶음은 개별 발송으로 재시도.
+  //    묶음마다 발송 직후 deliveries·last_sent_at 을 기록한다 — 중간에 함수가 끊겨도 이미 보낸 사람이 다음 실행에서 또 받지 않도록.
+  if (!testOnly && jobs.length) {
+    if (!(await acquireSendLock(sb))) throw new Error("다른 발송 작업이 진행 중입니다 (10분 이내). 잠시 후 다시 시도하세요.");
+  }
+  try {
+    const useBatch = !!mailer.sendBatch && !testOnly && jobs.length > 1;
+    for (let i = 0; i < jobs.length; i += BATCH_SIZE) {
+      const chunk = jobs.slice(i, i + BATCH_SIZE);
+      const sentRows: Record<string, unknown>[] = [];
+      const failedRows: Record<string, unknown>[] = [];
+      const sentIds: string[] = [];
+      const markSent = (j: Job, id: string | undefined) => {
+        sentRows.push({ subscriber_id: j.sub.id, update_ids: j.mine.map((u) => u.id), provider_message_id: id ?? null, status: "sent", error: null });
+        sentIds.push(j.sub.id);
+        result.sent++;
+      };
+      const sendOne = async (j: Job) => {
+        try {
+          markSent(j, (await mailer.send(j.msg)).id);
+        } catch (e) {
+          const msg = String((e as Error).message ?? e);
+          failedRows.push({ subscriber_id: j.sub.id, update_ids: j.mine.map((u) => u.id), status: "failed", error: msg });
+          result.failed.push({ email: j.sub.email, error: msg });
+        }
+      };
 
-  const sendOne = async (j: Job) => {
-    try {
-      const r = await mailer.send(j.msg);
-      sentRows.push({ subscriber_id: j.sub.id, update_ids: j.mine.map((u) => u.id), provider_message_id: r.id ?? null, status: "sent", error: null });
-      sentIds.push(j.sub.id);
-      result.sent++;
-    } catch (e) {
-      const msg = String((e as Error).message ?? e);
-      failedRows.push({ subscriber_id: j.sub.id, update_ids: j.mine.map((u) => u.id), status: "failed", error: msg });
-      result.failed.push({ email: j.sub.email, error: msg });
-    }
-  };
+      let batched = false;
+      if (useBatch) {
+        try {
+          const rs = await mailer.sendBatch!(chunk.map((j) => j.msg));
+          chunk.forEach((j, k) => markSent(j, rs[k]?.id));
+          batched = true;
+        } catch (e) {
+          console.error("[digest] batch send failed, falling back to single sends:", (e as Error).message);
+        }
+      }
+      if (!batched) for (const j of chunk) await sendOne(j);
 
-  const useBatch = !!mailer.sendBatch && !testOnly && jobs.length > 1;
-  for (let i = 0; i < jobs.length; i += BATCH_SIZE) {
-    const chunk = jobs.slice(i, i + BATCH_SIZE);
-    if (useBatch) {
-      try {
-        const rs = await mailer.sendBatch!(chunk.map((j) => j.msg));
-        chunk.forEach((j, k) => {
-          sentRows.push({ subscriber_id: j.sub.id, update_ids: j.mine.map((u) => u.id), provider_message_id: rs[k]?.id ?? null, status: "sent", error: null });
-          sentIds.push(j.sub.id);
-          result.sent++;
-        });
-        continue;
-      } catch (e) {
-        console.error("[digest] batch send failed, falling back to single sends:", (e as Error).message);
+      await recordMany([...sentRows, ...failedRows]);
+      if (!testOnly && sentIds.length) {
+        const { error } = await sb.from("subscribers").update({ last_sent_at: nowIso() }).in("id", sentIds);
+        if (error) console.error("[digest] last_sent_at update failed:", error.message);
       }
     }
-    for (const j of chunk) await sendOne(j);
-  }
-
-  await recordMany([...sentRows, ...failedRows]);
-  if (!testOnly && sentIds.length) {
-    const { error } = await sb.from("subscribers").update({ last_sent_at: nowIso() }).in("id", sentIds);
-    if (error) console.error("[digest] last_sent_at update failed:", error.message);
+  } finally {
+    if (!testOnly && jobs.length) await releaseSendLock(sb).catch(() => {});
   }
   return result;
 }

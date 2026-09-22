@@ -1,6 +1,6 @@
 import { CATALOG_BY_ID } from "@/lib/catalog";
 import { resendMailer, type Mailer } from "@/lib/digest";
-import { supabaseAdmin, type SubscriberRow } from "@/lib/supabase";
+import { mailFrom, selectAll, supabaseAdmin, type SubscriberRow } from "@/lib/supabase";
 import { consecutiveZeroRuns, readLastCollect, type LastCollect } from "@/lib/collect";
 import { describeSource } from "@/lib/source-info";
 import { computeHealth, type HealthReport } from "@/lib/health";
@@ -68,7 +68,7 @@ export async function collectAdminStats(now = new Date(), hours = 24): Promise<A
     sb.from("subscribers").select("*").gte("created_at", since).order("created_at", { ascending: false }),
     sb.from("updates").select("jurisdiction,catalog_ids").gte("created_at", since),
     sb.from("deliveries").select("status").gte("week_start", monday.toISOString().slice(0, 10)),
-    sb.from("subscribers").select("email, catalog_ids").eq("active", true),
+    selectAll<{ email: string; catalog_ids: string[] }>(() => sb.from("subscribers").select("email, catalog_ids").eq("active", true).order("created_at", { ascending: true }).order("id", { ascending: true })).then((data) => ({ data, error: null as null })),
     readLastCollect().catch(() => null),
   ]);
   if (newSubsQ.error) throw newSubsQ.error;
@@ -200,7 +200,7 @@ export async function sendDailyAdminReport(now = new Date(), mailer: Mailer = re
   const stats = await collectAdminStats(now);
   const kstDate = new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 10);
   const { id } = await mailer.send({
-    from: process.env.MAIL_FROM!,
+    from: mailFrom(),
     to: ADMIN_EMAIL(),
     subject: `[RegTide 운영] ${kstDate} 구독자 ${stats.totalActive}명 · 신규 ${stats.newSubscribers.length}명`,
     html: renderAdminHtml(stats, { title: "일일 구독자 현황" }),
@@ -241,7 +241,7 @@ export async function notifyMilestoneIfReached(mailer?: Mailer): Promise<{ sent:
     if (!mailer && !process.env.RESEND_API_KEY) return { sent: false, total, milestone: last };
     const stats = await collectAdminStats(new Date());
     await (mailer ?? resendMailer()).send({
-      from: process.env.MAIL_FROM!,
+      from: mailFrom(),
       to: ADMIN_EMAIL(),
       subject: `[RegTide 운영] 🎉 구독자 ${milestone}명 달성 (현재 ${total}명)`,
       html: renderAdminHtml(stats, { title: `구독자 ${milestone}명 달성`, lead: `활성 구독자가 ${total}명이 되어 ${milestone}명 구간을 넘었습니다. 최근 24시간 현황을 함께 보냅니다.` }),

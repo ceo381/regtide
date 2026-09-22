@@ -14,7 +14,26 @@ export interface RawUpdate {
 export interface SourceAdapter {
   key: string;
   label: string;
-  fetch(since: Date): Promise<RawUpdate[]>;
+  fetch(since: Date): Promise<RawUpdate[] | FetchResult>;
+}
+
+/**
+ * 어댑터가 "상태 커밋"을 미뤄야 할 때 쓰는 확장 반환형.
+ * 페이지 감시처럼 기준 스냅샷을 갱신하는 소스는, 변경분이 DB 에 저장된 **뒤에** 스냅샷을 옮겨야
+ * 저장 실패·타임아웃 시 변경분이 영구 누락되지 않는다. collect 가 upsert 성공 후 commit() 을 호출한다.
+ */
+export interface FetchResult {
+  items: RawUpdate[];
+  /** 수집 전 원본 건수(필터 전). 상태 점검의 "0건" 판정에 사용 */
+  rawCount?: number;
+  commit?: () => Promise<void>;
+}
+/** 어댑터 반환값을 항목 배열로 정규화 (스크립트·테스트용) */
+export function itemsOf(v: RawUpdate[] | FetchResult): RawUpdate[] {
+  return Array.isArray(v) ? v : v.items;
+}
+export function isFetchResult(v: RawUpdate[] | FetchResult): v is FetchResult {
+  return !Array.isArray(v) && typeof v === "object" && Array.isArray((v as FetchResult).items);
 }
 
 /** 일부 사이트(iso.org 등)는 비브라우저 UA를 차단하므로 일반 브라우저 헤더를 사용 */

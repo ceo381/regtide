@@ -10,6 +10,7 @@
  *   --send-empty  해당 항목이 없어도 메일 발송 (템플릿 확인용)
  *   --only=이메일  그 한 명에게만 테스트 발송 (deliveries 미기록). 로컬에서 send 는 --only 없이는 거부됨
  */
+import { itemsOf } from "@/lib/sources/types";
 import { collectUpdates } from "../lib/collect";
 import { classifyPending } from "../lib/classify";
 import { sendWeeklyDigests } from "../lib/digest";
@@ -23,7 +24,7 @@ async function main() {
     for (const a of allAdapters()) {
       if (a.key.startsWith("page_watch")) continue; // 스냅샷 DB 필요
       try {
-        const items = await a.fetch(since);
+        const items = itemsOf(await a.fetch(since));
         console.log(`\n■ ${a.label} (${a.key}) — ${items.length}건`);
         for (const it of items.slice(0, 5)) console.log(`  - [${it.publishedAt?.toISOString().slice(0, 10) ?? "----"}] ${it.title}\n    ${it.url}`);
       } catch (e) {

@@ -19,6 +19,7 @@ import { classifyPending } from "@/lib/classify";
 import { sendWeeklyDigests, weekWindow, type Mailer } from "@/lib/digest";
 import { pageWatchAdapter } from "@/lib/sources/page-watch";
 import { mfdsRssAdapter } from "@/lib/sources/mfds-rss";
+import { itemsOf } from "@/lib/sources/types";
 import { allAdapters, type SourceAdapter } from "@/lib/sources";
 import { describeSource } from "@/lib/source-info";
 import { consecutiveZeroRuns } from "@/lib/collect";
@@ -76,7 +77,7 @@ const adapters: SourceAdapter[] = [
 async function main() {
   console.log("\n[1] RSS 파서");
   await ok("의료기기 관련 항목만 통과하고 CDATA/pubDate 를 파싱한다", async () => {
-    const items = await mfdsRssAdapter("data0009").fetch(since);
+    const items = itemsOf(await mfdsRssAdapter("data0009").fetch(since));
     const titles = items.map((i) => i.title);
     assert.ok(titles.some((t) => t.includes("의료기기법 시행규칙")));
     assert.ok(titles.some((t) => t.includes("품질관리 기준")));
@@ -183,17 +184,17 @@ async function main() {
     assert.equal(rows.length, 1, "행이 중복 생성되지 않고 갱신됨");
     assert.equal(rows[0].status, "sent");
   });
-  await ok("weekWindow: 월요일 09:00 KST 크론 실행 시 그 실행에서 수집한 항목이 포함되는 구간", () => {
+  await ok("weekWindow: 매일 수집 체계 — 후보 구간은 최근 14일, 중복 방지 키는 이번 주 월요일", () => {
     const cronTime = new Date("2026-09-21T00:00:00Z"); // 월 09:00 KST
     const w = weekWindow(cronTime);
     assert.equal(w.weekStart, "2026-09-21", "중복 방지 키는 이번 주 월요일");
-    assert.equal(w.start.toISOString(), "2026-09-20T15:00:00.000Z", "start = 이번 주 월 00:00 KST");
+    assert.equal(w.start.toISOString(), new Date(cronTime.getTime() - 14 * 86400_000).toISOString(), "start = 14일 전");
     assert.equal(w.end.getTime(), cronTime.getTime(), "end = 지금");
-    // 방금 수집된 항목(created_at = 크론 시각)은 포함, 지난주 크론 항목은 제외
+    // 크론 시각 수집분과 지난주 수요일 일일 수집분 모두 후보에 포함 (중복은 deliveries.update_ids 로 제외)
     const justCollected = new Date(cronTime.getTime() + 60_000).toISOString();
-    const lastWeekRun = new Date(cronTime.getTime() - 7 * 86400_000).toISOString();
+    const lastWednesday = new Date(cronTime.getTime() - 5 * 86400_000).toISOString();
     assert.ok(justCollected >= w.start.toISOString(), "이번 실행 수집분 포함");
-    assert.ok(lastWeekRun < w.start.toISOString(), "지난주 실행 수집분 제외");
+    assert.ok(lastWednesday >= w.start.toISOString(), "주중 일일 수집분 포함");
     // 이메일 표시 기간은 지난주 월 ~ 일
     assert.equal(w.periodStart.toISOString(), "2026-09-13T15:00:00.000Z");
     assert.equal(w.periodEnd.toISOString(), "2026-09-20T15:00:00.000Z");
@@ -212,6 +213,21 @@ async function main() {
     assert.ok(m!.html.includes("2026. 09. 14.") && m!.html.includes("2026. 09. 20."), "표시 기간은 지난주 월~일");
   });
 
+  await ok("매일 수집 체계: 주중(수요일) 수집 항목이 다음 월요일 메일에 들어가고, 지난주에 보낸 항목은 다시 실리지 않는다", async () => {
+    const nextMonday = new Date("2026-09-28T00:05:00Z");
+    // 지난주 수요일(9/23) 일일 크론이 수집한 항목
+    db.tables.updates.push({ id: "u-wed", source: "mfds_rss:ntc0021", external_id: "wed-1", jurisdiction: "KR", title: "의료기기 허가·신고·심사 규정 개정 안내", url: "https://x", published_at: "2026-09-23T00:00:00Z", raw: null, summary_ko: "발췌", impact: "medium", catalog_ids: ["kr-approval"], matched_keywords: ["허가·신고·심사"], classified_at: "2026-09-22T23:10:00Z", created_at: "2026-09-22T23:05:00Z" });
+    const before = sent.length;
+    const r = await sendWeeklyDigests(nextMonday, {}, mailer);
+    assert.equal(r.failed.length, 0);
+    const m = sent.slice(before).find((x) => x.to === "cron@company.kr");
+    assert.ok(m, "다음 월요일 메일 발송");
+    assert.ok(m!.html.includes("개정 안내"), "수요일 수집 항목 포함");
+    assert.ok(!m!.html.includes("일부개정고시"), "지난주 월요일 메일에 이미 보낸 항목(u-cron)은 14일 창 안이어도 제외");
+    const row = db.tables.deliveries.find((d) => d.subscriber_id === "s6" && d.week_start === "2026-09-28")!;
+    assert.ok((row.update_ids as string[]).includes("u-wed") && !(row.update_ids as string[]).includes("u-cron"));
+  });
+
   await ok("배치 발송: sendBatch 로 묶어 보내고, 배치 실패 시 개별 발송으로 대체한다", async () => {
     // 새 주(week) 로 가정하여 중복 방지 키를 피함
     const wk = new Date("2026-09-28T00:05:00Z");
@@ -226,6 +242,8 @@ async function main() {
         return ms.map((_, i) => ({ id: `batch_${i}` }));
       },
     };
+    const wkKey0 = wk.toISOString().slice(0, 10);
+    db.tables.deliveries = db.tables.deliveries.filter((d) => d.week_start !== wkKey0); // 앞선 시나리오의 같은 주 기록 제거
     const before = sent.length;
     const nActive = db.tables.subscribers.filter((x) => x.active).length;
     // 첫 호출: batch 실패 → 개별 발송으로 대체되어 활성 구독자 전원이 받음
@@ -315,14 +333,26 @@ async function main() {
     process.env.NEXT_PUBLIC_SITE_URL = "https://regtide.example";
     const disc = checkDisclaimerTemplate();
     assert.deepEqual(disc.filter((i) => i.level === "critical"), [], "면책 템플릿 필수 문구 누락 없음");
-    const fresh = { ranAt: new Date().toISOString(), since: "", fetched: 1, inserted: 1, bySource: { "mfds_rss:data0009": 1 }, skipped: [], errors: [], history: [] };
+    const fresh = { ranAt: new Date().toISOString(), since: "", fetched: 1, inserted: 1, bySource: { "mfds_rss:data0009": 1 }, rawBySource: { "mfds_rss:data0009": 20 }, skipped: [], errors: [], history: [] };
     const stale = checkCollection({ ...fresh, ranAt: new Date(Date.now() - 40 * 3600_000).toISOString() });
     assert.ok(stale.some((i) => i.level === "critical" && i.title.includes("마지막 수집")), "40시간 전 수집 → 즉시 조치");
     const errored = checkCollection({ ...fresh, errors: [{ source: "federal_register", error: "HTTP 500" }] });
     assert.ok(errored.some((i) => i.level === "critical" && i.title.includes("소스 오류")), "소스 오류 → 즉시 조치");
-    const hist = Array.from({ length: 7 }, (_, i) => ({ ranAt: String(i), bySource: { "mfds_rss:ntc0021": 0 }, errors: 0, skipped: 0 }));
-    const zero = checkCollection({ ...fresh, bySource: { "mfds_rss:ntc0021": 0 }, history: hist });
-    assert.ok(zero.some((i) => i.level === "critical" && i.title.includes("수집 누락 경보")), "7회 연속 0건 → 누락 경보");
+    // 원본(필터 전) 건수가 0 인 실행이 7회 연속 + 예전에는 항목이 있었음 → 즉시 조치
+    const hist = [
+      { ranAt: "0", bySource: { "mfds_rss:ntc0021": 3 }, rawBySource: { "mfds_rss:ntc0021": 25 }, errors: 0, skipped: 0 },
+      ...Array.from({ length: 7 }, (_, i) => ({ ranAt: String(i + 1), bySource: { "mfds_rss:ntc0021": 0 }, rawBySource: { "mfds_rss:ntc0021": 0 }, errors: 0, skipped: 0 })),
+    ];
+    const zero = checkCollection({ ...fresh, bySource: { "mfds_rss:ntc0021": 0 }, rawBySource: { "mfds_rss:ntc0021": 0 }, history: hist });
+    assert.ok(zero.some((i) => i.level === "critical" && i.title.includes("수집 누락 경보")), "예전엔 오던 소스가 7회 연속 빈 응답 → 누락 경보");
+    // 피드는 차 있는데(원본 25건) 의료기기 항목만 없어서 필터 후 0건 → 경보 아님 (오탐 방지)
+    const quietOk = Array.from({ length: 8 }, (_, i) => ({ ranAt: String(i), bySource: { "mfds_rss:data0007": 0 }, rawBySource: { "mfds_rss:data0007": 25 }, errors: 0, skipped: 0 }));
+    const notAlarm = checkCollection({ ...fresh, bySource: { "mfds_rss:data0007": 0 }, rawBySource: { "mfds_rss:data0007": 25 }, history: quietOk });
+    assert.ok(!notAlarm.some((i) => i.title.includes("data0007") || i.title.includes("예규")), "피드가 살아 있고 의료기기 항목만 없는 경우는 경보 아님");
+    // 한 번도 항목이 없던 소스가 7회 연속 빈 응답 → 확인 등급(warning)
+    const never = Array.from({ length: 7 }, (_, i) => ({ ranAt: String(i), bySource: { "mfds_rss:seohan001": 0 }, rawBySource: { "mfds_rss:seohan001": 0 }, errors: 0, skipped: 0 }));
+    const w = checkCollection({ ...fresh, bySource: { "mfds_rss:seohan001": 0 }, rawBySource: { "mfds_rss:seohan001": 0 }, history: never });
+    assert.ok(w.some((i) => i.level === "warning" && i.title.includes("빈 응답")));
     assert.ok(checkCollection(null).some((i) => i.title === "수집 기록 없음"));
   });
 
@@ -391,13 +421,19 @@ async function main() {
     await call({ ...good, products: [{ name: "혈당측정기", category: "체외진단의료기기", catalogIds: ["kr-ivd-act"] }] });
     assert.equal(db.tables.subscribers.filter((s) => s.email === "ra@company.co.kr").length, 1);
   });
-  await ok("구독해지: 토큰 일치 시 구독자 삭제 후 리다이렉트", async () => {
-    const { GET } = await import("@/app/api/unsubscribe/route");
+  await ok("구독해지: GET 은 확인 페이지만(삭제 없음), POST 로 토큰 일치 시 삭제 후 리다이렉트", async () => {
+    const { GET, POST } = await import("@/app/api/unsubscribe/route");
     const mk = (t: string) => ({ nextUrl: new URL(`http://localhost/api/unsubscribe?token=${t}`) }) as never;
-    const res = await GET(mk("tok1"));
+    // 메일 스캐너가 링크를 자동으로 열어도(GET) 구독이 지워지면 안 된다
+    const view = await GET(mk("tok1"));
+    assert.equal(view.status, 200);
+    assert.ok((await view.text()).includes("구독을 해지할까요"));
+    assert.ok(db.tables.subscribers.some((s) => s.unsubscribe_token === "tok1"), "GET 으로는 삭제되지 않아야 함");
+    const post = (t: string) => { const fd = new FormData(); fd.set("token", t); return new Request("http://localhost/api/unsubscribe", { method: "POST", body: fd }); };
+    const res = await POST(Object.assign(post("tok1"), { nextUrl: new URL("http://localhost/api/unsubscribe") }) as never);
     assert.equal(res.headers.get("location"), "https://regtide.example/?unsub=ok");
     assert.ok(!db.tables.subscribers.some((s) => s.unsubscribe_token === "tok1"));
-    const bad = await GET(mk("nope"));
+    const bad = await POST(Object.assign(post("nope"), { nextUrl: new URL("http://localhost/api/unsubscribe") }) as never);
     assert.equal(bad.headers.get("location"), "https://regtide.example/?unsub=invalid");
   });
 

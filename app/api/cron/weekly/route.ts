@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { COLLECT_LOOKBACK_DAYS, collectUpdates } from "@/lib/collect";
-import { classifyPending } from "@/lib/classify";
+import { classifyAll } from "@/lib/classify";
 import { sendWeeklyDigests, weekWindow } from "@/lib/digest";
 
 export const runtime = "nodejs";
@@ -42,13 +42,21 @@ export async function GET(req: NextRequest) {
   const since = new Date(now.getTime() - COLLECT_LOOKBACK_DAYS * 86400_000);
   const out: Record<string, unknown> = { ranAt: now.toISOString(), week: weekWindow(now).weekStart };
 
-  try {
-    if (step === "all" || step === "collect") out.collect = await collectUpdates(since);
-    if (step === "all" || step === "classify") out.classify = await classifyPending();
-    if (step === "all" || step === "send") out.send = await sendWeeklyDigests(now, { sendEmpty: req.nextUrl.searchParams.get("sendEmpty") !== "0", recent: req.nextUrl.searchParams.get("recent") === "1", only });
-    if (only) out.testOnly = only;
-    return NextResponse.json(out);
-  } catch (e) {
-    return NextResponse.json({ ...out, error: String((e as Error).message ?? e) }, { status: 500 });
+  // 단계별로 독립 실행: 수집·분류가 실패해도 이미 분류된 항목으로 발송은 진행 (월요일 메일이 통째로 빠지지 않도록)
+  if (step === "all" || step === "collect") {
+    try { out.collect = await collectUpdates(since); } catch (e) { out.collectError = String((e as Error).message ?? e); }
   }
+  if (step === "all" || step === "classify") {
+    try { out.classify = await classifyAll(); } catch (e) { out.classifyError = String((e as Error).message ?? e); }
+  }
+  if (step === "all" || step === "send") {
+    try {
+      out.send = await sendWeeklyDigests(now, { sendEmpty: req.nextUrl.searchParams.get("sendEmpty") !== "0", recent: req.nextUrl.searchParams.get("recent") === "1", only });
+      if (only) out.testOnly = only;
+    } catch (e) {
+      out.sendError = String((e as Error).message ?? e);
+      return NextResponse.json(out, { status: 500 });
+    }
+  }
+  return NextResponse.json(out);
 }

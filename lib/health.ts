@@ -1,5 +1,5 @@
 import { allAdapters } from "@/lib/sources";
-import { consecutiveZeroRuns, type LastCollect } from "@/lib/collect";
+import { consecutiveZeroRuns, enabled, everHadItems, type LastCollect } from "@/lib/collect";
 import { describeSource } from "@/lib/source-info";
 import { renderDigestHtml } from "@/lib/digest";
 import { supabaseAdmin, type SubscriberRow } from "@/lib/supabase";
@@ -68,22 +68,24 @@ export function checkCollection(last: LastCollect | null, now = new Date()): Hea
   for (const s of last.skipped ?? []) issues.push({ level: "warning", area: "수집", title: `소스 건너뜀: ${s.source}`, detail: s.reason, action: "차단(403)이 지속되면 DISABLED_SOURCES 로 명시적으로 끄고 대체 소스 검토" });
 
   // 활성 어댑터 중 마지막 수집 결과에 아예 없는 소스 (코드에 있는데 실행되지 않음)
-  const off = new Set((process.env.DISABLED_SOURCES ?? "").split(",").map((s) => s.trim()).filter(Boolean));
-  const expected = allAdapters().map((a) => a.key).filter((k) => !off.has(k));
+  const expected = [...new Set(enabled(allAdapters()).map((a) => a.key))];
   const seen = new Set(Object.keys(last.bySource ?? {}));
   const erroredOrSkipped = new Set([...(last.errors ?? []).map((e) => e.source), ...(last.skipped ?? []).map((s) => s.source.split(" ")[0])]);
   for (const k of expected) {
     if (!seen.has(k) && !erroredOrSkipped.has(k)) issues.push({ level: "warning", area: "수집", title: `소스 결과 없음: ${describeSource(k).agency} · ${describeSource(k).name || k}`, detail: "마지막 수집 결과에 이 소스가 포함되지 않았습니다(배포 전 코드 또는 실행 중단).", action: "재배포 후 수집 실행" });
   }
 
-  // 연속 0건 (페이지 감시 제외)
+  // 연속 0건 (원본 건수 기준 — 피드 자체가 비었을 때만). 페이지 감시 제외.
+  //  - 예전에 항목이 오던 소스가 7회 연속 비면 "조용해짐" → 즉시 조치
+  //  - 한 번도 항목이 없던 소스는 아직 판단 불가 → 7회 이상이면 확인 등급
   for (const k of Object.keys(last.bySource ?? {})) {
     if (k.startsWith("page_watch:")) continue;
     const n = consecutiveZeroRuns(last.history, k);
-    if (n >= 7) issues.push({ level: "critical", area: "수집", title: `수집 누락 경보: ${describeSource(k).agency} · ${describeSource(k).name || k}`, detail: `${n}회 연속 0건. 피드 URL·구조 변경 또는 차단 가능성.`, action: "브라우저에서 피드 URL 을 직접 열어 의료기기 항목이 있는지 대조" });
-    else if (n >= 3) issues.push({ level: "info", area: "수집", title: `${describeSource(k).name || k} ${n}회 연속 0건`, detail: "게시가 드문 피드면 정상일 수 있습니다. 7회 이상이면 경보로 승격됩니다." });
+    const name = `${describeSource(k).agency} · ${describeSource(k).name || k}`;
+    if (n >= 7 && everHadItems(last.history, k)) issues.push({ level: "critical", area: "수집", title: `수집 누락 경보: ${name}`, detail: `이전에는 항목이 오던 소스가 ${n}회 연속 빈 응답. 피드 URL·구조 변경 또는 차단 가능성.`, action: "브라우저에서 피드 URL 을 직접 열어 항목이 있는지 대조" });
+    else if (n >= 7) issues.push({ level: "warning", area: "수집", title: `${name} — ${n}회 연속 빈 응답`, detail: "이 소스에서 아직 한 번도 항목을 받지 못했습니다. 피드가 원래 비어 있거나 URL 이 잘못됐을 수 있습니다.", action: "브라우저에서 피드 URL 을 직접 열어 확인" });
   }
-  if (!process.env.LAW_GO_KR_OC) issues.push({ level: "info", area: "수집", title: "국가법령정보 Open API 미연결", detail: "LAW_GO_KR_OC 가 없어 법령·행정규칙 개정 이력 소스가 꺼져 있습니다.", action: "승인 후 Vercel 에 LAW_GO_KR_OC 추가 → Redeploy" });
+  if (!(process.env.LAW_GO_KR_OC ?? "").trim()) issues.push({ level: "info", area: "수집", title: "국가법령정보 Open API 미연결", detail: "LAW_GO_KR_OC 가 없어 법령·행정규칙 개정 이력 소스가 꺼져 있습니다.", action: "승인 후 Vercel 에 LAW_GO_KR_OC 추가 → Redeploy" });
   return issues;
 }
 
@@ -110,9 +112,9 @@ export async function checkDataAndDelivery(now = new Date()): Promise<HealthIssu
     const reasons = [...new Set(failed.map((f) => f.error ?? "").filter(Boolean))].slice(0, 2).join(" / ");
     issues.push({ level: "critical", area: "발송", title: `이번 주 발송 실패 ${failed.length}건`, detail: reasons || "원인 미기록", action: "발송 기록 탭에서 오류 확인. 실패 건은 다음 크론에서 자동 재시도" });
   }
-  // 월요일 10:00 KST 이후인데 이번 주 발송 기록이 하나도 없으면 크론 미실행
-  const mondayTenKst = new Date(monday.getTime() + 10 * HOURS - 9 * HOURS);
-  if (now >= mondayTenKst && dels.length === 0 && active > 0) {
+  // 월요일 12:00 KST 이후인데 이번 주 발송 기록이 하나도 없으면 크론 미실행 (Hobby 크론은 최대 1시간 지연 가능)
+  const mondayNoonKst = new Date(monday.getTime() + 12 * HOURS - 9 * HOURS);
+  if (now >= mondayNoonKst && dels.length === 0 && active > 0) {
     issues.push({ level: "critical", area: "발송", title: "이번 주 정기 발송 기록 없음", detail: `월요일 09:00 KST 크론이 실행되지 않았거나 실패했습니다 (활성 구독자 ${active}명).`, action: "Vercel Logs 에서 /api/cron/weekly 확인 후 필요시 ?step=send&confirm=all 로 수동 발송" });
   }
   // Resend 일일 한도

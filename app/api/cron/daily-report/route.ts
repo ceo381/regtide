@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { notifyMilestoneIfReached, sendDailyAdminReport } from "@/lib/admin-report";
 import { COLLECT_LOOKBACK_DAYS, collectUpdates } from "@/lib/collect";
-import { classifyPending } from "@/lib/classify";
+import { classifyAll } from "@/lib/classify";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300; // Vercel Hobby(Fluid) 최대. 수집은 어댑터당 40초 상한이 별도로 있음
 export const dynamic = "force-dynamic";
 
 /**
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     if (req.nextUrl.searchParams.get("skipCollect") !== "1") {
       try {
         out.collect = await collectUpdates(new Date(now.getTime() - COLLECT_LOOKBACK_DAYS * 86400_000));
-        out.classify = await classifyPending();
+        out.classify = await classifyAll();
       } catch (e) {
         // 수집이 실패해도 리포트는 보내야 운영자가 알 수 있다
         out.collectError = String((e as Error).message ?? e);

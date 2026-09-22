@@ -1,4 +1,4 @@
-import { supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
+import { selectAll, supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { collectAdminStats, type AdminStats } from "@/lib/admin-report";
 import { computeHealth, type HealthReport } from "@/lib/health";
 import { listChannels, type ChannelRow } from "@/lib/channels";
@@ -126,7 +126,7 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   // 통계·구독자·수집항목·발송기록을 한 번에 병렬 조회
   const [stats, subsQ, upsQ, delsQ, registry] = await Promise.all([
     collectAdminStats(now),
-    sb.from("subscribers").select("*").order("created_at", { ascending: false }),
+    selectAll<DashboardData["subscribers"][number]>(() => sb.from("subscribers").select("*").order("created_at", { ascending: false }).order("id", { ascending: true })).then((data) => ({ data, error: null as null })),
     sb.from("updates").select("*").order("created_at", { ascending: false }).limit(60),
     sb.from("deliveries").select("subscriber_id, status, sent_at, error, update_ids").eq("week_start", weekStart).order("sent_at", { ascending: false }),
     listChannels().catch(() => [] as ChannelRow[]), // channels 테이블이 아직 없으면 빈 목록

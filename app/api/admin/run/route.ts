@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/admin-auth";
 import { COLLECT_LOOKBACK_DAYS, collectUpdates } from "@/lib/collect";
-import { classifyPending } from "@/lib/classify";
+import { classifyAll } from "@/lib/classify";
 import { sendWeeklyDigests } from "@/lib/digest";
 import { ADMIN_EMAIL, sendDailyAdminReport } from "@/lib/admin-report";
 import { supabaseAdmin } from "@/lib/supabase";
 import { deleteChannel, upsertChannel, validateChannel } from "@/lib/channels";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 /**
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       return back(`수집 완료: 가져옴 ${r.fetched} · 신규 ${r.inserted} · 건너뜀 ${r.skipped.length} · 오류 ${r.errors.length}`);
     }
     if (action === "classify") {
-      const r = await classifyPending();
+      const r = await classifyAll();
       return back(`분류 완료: ${r.classified}건 처리 · ${r.matched}건 규격 매칭 · 오류 ${r.errors.length}`);
     }
     if (action === "testsend") {

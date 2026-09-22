@@ -54,7 +54,7 @@ export const federalRegisterAdapter: SourceAdapter = {
         for (const f of ["document_number", "title", "type", "abstract", "html_url", "publication_date"]) params.append("fields[]", f);
 
         const url = `https://www.federalregister.gov/api/v1/documents.json?${params}`;
-        const res = await fetch(url, { cache: "no-store", headers: { ...FETCH_HEADERS, accept: "application/json" } });
+        const res = await fetch(url, { cache: "no-store", headers: { ...FETCH_HEADERS, accept: "application/json" }, signal: AbortSignal.timeout(25_000) });
         if (!res.ok) throw new Error(`Federal Register HTTP ${res.status} (${term})`);
         const text = await res.text();
         let json: FRResponse;

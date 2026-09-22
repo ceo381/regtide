@@ -54,6 +54,7 @@ export function createFakeSupabase(): FakeDB {
     let upsertOpts: { onConflict?: string; ignoreDuplicates?: boolean } = {};
     let orderBy: { col: string; asc: boolean } | null = null;
     let lim: number | null = null;
+    let rangeFrom = 0;
     let single = false;
     let wantSelect = false;
 
@@ -101,6 +102,7 @@ export function createFakeSupabase(): FakeDB {
         const { col, asc } = orderBy;
         result.sort((a, b) => (String(a[col] ?? "") < String(b[col] ?? "") ? -1 : 1) * (asc ? 1 : -1));
       }
+      if (rangeFrom) result = result.slice(rangeFrom);
       if (lim != null) result = result.slice(0, lim);
       if (single) return { data: result[0] ?? null, error: null };
       if (op !== "select" && !wantSelect) return { data: null, error: null };
@@ -122,6 +124,7 @@ export function createFakeSupabase(): FakeDB {
       in(c: string, vs: unknown[]) { const set = new Set(vs); filters.push((r) => set.has(r[c])); return b; },
       order(c: string, o: { ascending?: boolean } = {}) { orderBy = { col: c, asc: o.ascending !== false }; return b; },
       limit(n: number) { lim = n; return b; },
+      range(from: number, to: number) { rangeFrom = from; lim = to - from + 1; return b; },
       maybeSingle() { single = true; return b; },
       then(res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) { return Promise.resolve().then(exec).then(res, rej); },
     };

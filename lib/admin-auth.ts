@@ -31,7 +31,9 @@ function safeEq(a: string, b: string) {
 export function checkCredentials(user: string, password: string) {
   if (!adminEnabled()) return false;
   const u = process.env.ADMIN_USER ?? "admin";
-  return safeEq(user.trim(), u) && safeEq(password, process.env.ADMIN_PASSWORD!);
+  const a = safeEq(user.trim(), u);
+  const b = safeEq(password, process.env.ADMIN_PASSWORD!);
+  return a && b; // 둘 다 항상 비교 (아이디 유효성 타이밍 누설 방지)
 }
 
 /** 토큰 = base64url(payload).base64url(hmac) ; payload = { u, exp } */

@@ -88,14 +88,18 @@ export function pageWatchAdapter(cfg: PageWatchConfig): SourceAdapter {
       const sb = supabaseAdmin();
       const { data: prev } = await sb.from("page_snapshots").select("content_hash, content").eq("source_key", cfg.key).maybeSingle();
 
-      await sb.from("page_snapshots").upsert({ source_key: cfg.key, content_hash: hash, content: text, fetched_at: new Date().toISOString() });
+      // 기준 스냅샷 갱신은 collect 가 변경분을 DB 에 저장한 뒤에 수행 (commit). 저장 실패 시 다음 실행에서 다시 감지됨
+      const commit = async () => {
+        const { error } = await sb.from("page_snapshots").upsert({ source_key: cfg.key, content_hash: hash, content: text, fetched_at: new Date().toISOString() });
+        if (error) throw new Error(`snapshot upsert failed (${cfg.key}): ${error.message}`);
+      };
 
-      if (!prev) return []; // 최초 수집: 기준 스냅샷만 저장
-      if (prev.content_hash === hash) return [];
+      if (!prev) return { items: [], commit }; // 최초 수집: 기준 스냅샷만 저장
+      if (prev.content_hash === hash) return { items: [], commit };
 
       const prevSet = new Set(toSentences(prev.content));
       const added = toSentences(text).filter((s) => !prevSet.has(s));
-      if (added.length === 0) return [];
+      if (added.length === 0) return { items: [], commit };
 
       const diff = added.join("\n");
       const out: RawUpdate = {
@@ -107,7 +111,7 @@ export function pageWatchAdapter(cfg: PageWatchConfig): SourceAdapter {
         publishedAt: new Date(),
         raw: truncate(`${cfg.hint ? `[관련 규격: ${cfg.hint}]\n` : ""}새로 추가된 내용:\n${diff}`),
       };
-      return [out];
+      return { items: [out], rawCount: 1, commit };
     },
   };
 }
