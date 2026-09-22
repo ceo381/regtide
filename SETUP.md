@@ -418,6 +418,9 @@ curl.exe -H "Authorization: Bearer <CRON_SECRET값>" "https://regtide-pi.vercel.
 ### N-3. 메일에 "정보 수집 기간" 표기 (고객 피드백)
 헤더에 `정보 수집 기간: {실행-8일} ~ {실행 시각} KST (이 기간에 각 기관이 발표·게재한 항목, 8일) · 리포트 생성: {실행 시각}` 이 추가되었습니다. 되돌아보는 일수는 `lib/collect.ts` 의 `COLLECT_LOOKBACK_DAYS`(=8) 한 곳에서 관리하며 크론과 메일이 같은 값을 씁니다.
 
+### N-3b. Federal Register "오류 없이 0건" 대응 (2026-09-22)
+배포 후 `bySource.federal_register: 0`(errors 없음)이 관측됨. API 는 정상(최근 1주 의료기기 문서 5건 이상)이므로 질의 파라미터 문제로 판단하고 어댑터를 보수적으로 재작성: 검색어별(`"medical device"`, `"medical devices"`, `"in vitro diagnostic"`) 개별 질의 후 중복 제거, 날짜를 `MM/DD/YYYY` 로 전달, 문서 유형 `RULE/PRORULE/NOTICE` 로 한정, 그리고 **응답이 비정상(count 없음, count>0 인데 results 빈 배열)이면 예외**를 던져 운영 리포트 `errors` 에 드러나게 함. 재배포 후 `?step=collect` 로 `federal_register` 가 0 이 아닌지 확인.
+
 ### N-4. 아직 남은 보강 후보
 - 국가법령정보센터 Open API 활성화: https://open.law.go.kr 가입 → OPEN API 신청(무료, 승인 1~2일) → Vercel 에 `LAW_GO_KR_OC=<아이디>` 추가 → Redeploy. 의료기기법·시행령·시행규칙·고시 개정을 법령 단위로 잡습니다.
 - 의료기기안전정보포털(emedi)·의료기기정보기술지원센터 게시판(HTML 수집 필요).
