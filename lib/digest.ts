@@ -144,8 +144,11 @@ export interface SendResult {
 }
 
 /** 메일 발송 추상화 (테스트에서 가짜 발송기 주입용) */
+export interface MailMessage { from: string; to: string; subject: string; html: string }
 export interface Mailer {
-  send(msg: { from: string; to: string; subject: string; html: string }): Promise<{ id?: string }>;
+  send(msg: MailMessage): Promise<{ id?: string }>;
+  /** 여러 통을 한 번의 API 호출로 발송 (Resend batch, 최대 100통). 없으면 send 를 반복 호출 */
+  sendBatch?(msgs: MailMessage[]): Promise<{ id?: string }[]>;
 }
 
 export function resendMailer(): Mailer {
@@ -156,8 +159,19 @@ export function resendMailer(): Mailer {
       if (error) throw new Error(error.message);
       return { id: data?.id };
     },
+    async sendBatch(msgs) {
+      const { data, error } = await resend.batch.send(msgs);
+      if (error) throw new Error(error.message);
+      // SDK 버전에 따라 data 가 { data: [...] } 또는 [...] 형태
+      const arr = (Array.isArray(data) ? data : (data as { data?: { id: string }[] } | null)?.data) ?? [];
+      if (arr.length !== msgs.length) throw new Error(`batch 응답 개수 불일치 (${arr.length}/${msgs.length})`);
+      return arr.map((d) => ({ id: d?.id }));
+    },
   };
 }
+
+/** Resend batch 1회 최대 100통. 여유를 두고 50통씩 */
+const BATCH_SIZE = 50;
 
 export async function sendWeeklyDigests(
   now = new Date(),
@@ -202,42 +216,90 @@ export async function sendWeeklyDigests(
 
   const from = process.env.MAIL_FROM ?? "RegTide <onboarding@resend.dev>";
   const result: SendResult = { sent: 0, skipped: 0, failed: [] };
+  const nowIso = () => new Date().toISOString();
 
+  // 이번 주 발송 기록을 한 번에 조회 (구독자 수만큼 쿼리하지 않도록)
+  const alreadySent = new Set<string>();
+  if (!testOnly) {
+    const { data: dels } = await sb.from("deliveries").select("subscriber_id, status").eq("week_start", weekStart);
+    for (const d of (dels ?? []) as { subscriber_id: string; status: string }[]) if (d.status === "sent") alreadySent.add(d.subscriber_id);
+  }
+
+  // 테스트 발송은 deliveries 에 기록하지 않는다 (정기 발송의 중복 방지 키를 소모하지 않도록)
+  const recordMany = async (rows: Record<string, unknown>[]) => {
+    if (testOnly || rows.length === 0) return;
+    const { error } = await sb
+      .from("deliveries")
+      .upsert(rows.map((r) => ({ week_start: weekStart, sent_at: nowIso(), ...r })), { onConflict: "subscriber_id,week_start" });
+    if (error) console.error("[digest] deliveries upsert failed:", error.message);
+  };
+
+  // 1) 구독자별 메시지 준비
+  type Job = { sub: SubscriberRow; mine: UpdateRow[]; msg: MailMessage };
+  const jobs: Job[] = [];
+  const emptyRows: Record<string, unknown>[] = [];
   for (const sub of subs) {
-    // 같은 주에 이미 "성공 발송"했으면 건너뜀 (크론 재실행 안전). failed / skipped_empty 는 재시도 허용
-    if (!testOnly) {
-      const { data: already } = await sb.from("deliveries").select("id, status").eq("subscriber_id", sub.id).eq("week_start", weekStart).maybeSingle();
-      if (already?.status === "sent") { result.skipped++; continue; }
-    }
-
-    // 테스트 발송은 deliveries 에 기록하지 않는다 (정기 발송의 중복 방지 키를 소모하지 않도록)
-    const record = (row: Record<string, unknown>) =>
-      testOnly
-        ? Promise.resolve()
-        : sb.from("deliveries").upsert({ subscriber_id: sub.id, week_start: weekStart, sent_at: new Date().toISOString(), ...row }, { onConflict: "subscriber_id,week_start" });
-
+    if (alreadySent.has(sub.id)) { result.skipped++; continue; }
     const mine = relevantUpdates(sub, updates);
     if (mine.length === 0 && !opts.sendEmpty) {
-      await record({ update_ids: [], status: "skipped_empty", error: null });
+      emptyRows.push({ subscriber_id: sub.id, update_ids: [], status: "skipped_empty", error: null });
       result.skipped++;
       continue;
     }
-
-    try {
-      const sent = await mailer.send({
+    jobs.push({
+      sub,
+      mine,
+      msg: {
         from,
         to: sub.email,
         subject: `${testOnly ? "[테스트] " : ""}[RegTide] 이번 주 의료기기 규제 업데이트 ${mine.length}건 (${weekStart} 주)`,
         html: renderDigestHtml(sub, mine, { start: periodStart, end: periodEnd, generatedAt: now }),
-      });
-      await record({ update_ids: mine.map((u) => u.id), provider_message_id: sent.id ?? null, status: "sent", error: null });
-      if (!testOnly) await sb.from("subscribers").update({ last_sent_at: new Date().toISOString() }).eq("id", sub.id);
+      },
+    });
+  }
+  await recordMany(emptyRows);
+
+  // 2) 발송: batch 가 가능하면 50통씩 한 번에, 실패한 묶음은 개별 발송으로 재시도
+  const sentRows: Record<string, unknown>[] = [];
+  const failedRows: Record<string, unknown>[] = [];
+  const sentIds: string[] = [];
+
+  const sendOne = async (j: Job) => {
+    try {
+      const r = await mailer.send(j.msg);
+      sentRows.push({ subscriber_id: j.sub.id, update_ids: j.mine.map((u) => u.id), provider_message_id: r.id ?? null, status: "sent", error: null });
+      sentIds.push(j.sub.id);
       result.sent++;
     } catch (e) {
       const msg = String((e as Error).message ?? e);
-      await record({ update_ids: mine.map((u) => u.id), status: "failed", error: msg });
-      result.failed.push({ email: sub.email, error: msg });
+      failedRows.push({ subscriber_id: j.sub.id, update_ids: j.mine.map((u) => u.id), status: "failed", error: msg });
+      result.failed.push({ email: j.sub.email, error: msg });
     }
+  };
+
+  const useBatch = !!mailer.sendBatch && !testOnly && jobs.length > 1;
+  for (let i = 0; i < jobs.length; i += BATCH_SIZE) {
+    const chunk = jobs.slice(i, i + BATCH_SIZE);
+    if (useBatch) {
+      try {
+        const rs = await mailer.sendBatch!(chunk.map((j) => j.msg));
+        chunk.forEach((j, k) => {
+          sentRows.push({ subscriber_id: j.sub.id, update_ids: j.mine.map((u) => u.id), provider_message_id: rs[k]?.id ?? null, status: "sent", error: null });
+          sentIds.push(j.sub.id);
+          result.sent++;
+        });
+        continue;
+      } catch (e) {
+        console.error("[digest] batch send failed, falling back to single sends:", (e as Error).message);
+      }
+    }
+    for (const j of chunk) await sendOne(j);
+  }
+
+  await recordMany([...sentRows, ...failedRows]);
+  if (!testOnly && sentIds.length) {
+    const { error } = await sb.from("subscribers").update({ last_sent_at: nowIso() }).in("id", sentIds);
+    if (error) console.error("[digest] last_sent_at update failed:", error.message);
   }
   return result;
 }

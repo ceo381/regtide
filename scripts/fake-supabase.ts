@@ -118,6 +118,7 @@ export function createFakeSupabase(): FakeDB {
       gte(c: string, v: string) { filters.push((r) => String(r[c]) >= v); return b; },
       lt(c: string, v: string) { filters.push((r) => String(r[c]) < v); return b; },
       lte(c: string, v: string) { filters.push((r) => String(r[c]) <= v); return b; },
+      in(c: string, vs: unknown[]) { const set = new Set(vs); filters.push((r) => set.has(r[c])); return b; },
       order(c: string, o: { ascending?: boolean } = {}) { orderBy = { col: c, asc: o.ascending !== false }; return b; },
       limit(n: number) { lim = n; return b; },
       maybeSingle() { single = true; return b; },

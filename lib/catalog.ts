@@ -232,7 +232,7 @@ export const CATALOG: CatalogItem[] = [
     jurisdiction: "US",
     label: "소프트웨어 · AI/ML 기기 (SaMD, PCCP)",
     description: "Software functions, AI-enabled device, Predetermined Change Control Plan 가이던스",
-    keywords: ["software as a medical device", "SaMD", "artificial intelligence", "machine learning", "AI-enabled", "PCCP", "predetermined change control", "device software functions"],
+    keywords: ["software as a medical device", "SaMD", "artificial intelligence", "machine learning", "AI-enabled", "PCCP", "predetermined change control", "device software functions", "computer-aided detection", "computer-aided diagnosis", "CADe", "CADx", "ML-based", "algorithm"],
     sources: US_SOURCES,
   },
   {
@@ -250,7 +250,7 @@ export const CATALOG: CatalogItem[] = [
     jurisdiction: "US",
     label: "IVD · LDT 규제 (21 CFR 809)",
     description: "체외진단 제품 및 실험실개발검사(LDT) 관련 규칙·가이던스",
-    keywords: ["in vitro diagnostic", "IVD", "laboratory developed test", "LDT", "part 809"],
+    keywords: ["in vitro diagnostic", "IVD", "laboratory developed test", "LDT", "part 809", "microbiology devices", "clinical chemistry", "immunology devices", "hematology devices"],
     sources: US_SOURCES,
   },
   {

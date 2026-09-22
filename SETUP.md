@@ -421,6 +421,11 @@ curl.exe -H "Authorization: Bearer <CRON_SECRET값>" "https://regtide-pi.vercel.
 ### N-3b. Federal Register "오류 없이 0건" 대응 (2026-09-22)
 배포 후 `bySource.federal_register: 0`(errors 없음)이 관측됨. API 는 정상(최근 1주 의료기기 문서 5건 이상)이므로 질의 파라미터 문제로 판단하고 어댑터를 보수적으로 재작성: 검색어별(`"medical device"`, `"medical devices"`, `"in vitro diagnostic"`) 개별 질의 후 중복 제거, 날짜를 `MM/DD/YYYY` 로 전달, 문서 유형 `RULE/PRORULE/NOTICE` 로 한정, 그리고 **응답이 비정상(count 없음, count>0 인데 results 빈 배열)이면 예외**를 던져 운영 리포트 `errors` 에 드러나게 함. 재배포 후 `?step=collect` 로 `federal_register` 가 0 이 아닌지 확인.
 
+### N-3c. 발송 규모 대응 — 배치 발송 (2026-09-22, 구독자 90명 시점)
+- 구독자 1명당 Resend API 1회 호출(순차) 방식은 구독자 100명 전후에서 Vercel 함수 시간 제한(60초)에 걸릴 수 있어, **Resend batch API 로 50통씩 묶어 발송**하도록 변경했습니다(`lib/digest.ts`). 배치 호출이 실패하면 그 묶음만 개별 발송으로 자동 대체합니다.
+- 발송 전 `deliveries` 를 한 번만 조회하고, 기록도 묶어서 upsert 하므로 DB 호출 수가 구독자 수에 비례하지 않습니다.
+- **Resend 무료 플랜은 하루 100통 · 월 3,000통.** 구독자 100명을 넘기 전에 Pro(월 $20, 5만 통)로 업그레이드해야 월요일 발송이 끊기지 않습니다. 일일 운영 리포트·마일스톤 알림도 이 한도에 포함됩니다.
+
 ### N-4. 아직 남은 보강 후보
 - 국가법령정보센터 Open API 활성화: https://open.law.go.kr 가입 → OPEN API 신청(무료, 승인 1~2일) → Vercel 에 `LAW_GO_KR_OC=<아이디>` 추가 → Redeploy. 의료기기법·시행령·시행규칙·고시 개정을 법령 단위로 잡습니다.
 - 의료기기안전정보포털(emedi)·의료기기정보기술지원센터 게시판(HTML 수집 필요).

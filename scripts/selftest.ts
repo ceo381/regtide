@@ -207,6 +207,45 @@ async function main() {
     assert.ok(m!.html.includes("2026. 09. 14.") && m!.html.includes("2026. 09. 20."), "표시 기간은 지난주 월~일");
   });
 
+  await ok("배치 발송: sendBatch 로 묶어 보내고, 배치 실패 시 개별 발송으로 대체한다", async () => {
+    // 새 주(week) 로 가정하여 중복 방지 키를 피함
+    const wk = new Date("2026-09-28T00:05:00Z");
+    const batchCalls: number[] = [];
+    let failFirst = true;
+    const batchMailer: Mailer = {
+      async send(m) { sent.push(m); return { id: `single_${sent.length}` }; },
+      async sendBatch(ms) {
+        batchCalls.push(ms.length);
+        if (failFirst) { failFirst = false; throw new Error("batch boom"); }
+        ms.forEach((m) => sent.push(m));
+        return ms.map((_, i) => ({ id: `batch_${i}` }));
+      },
+    };
+    const before = sent.length;
+    const nActive = db.tables.subscribers.filter((x) => x.active).length;
+    // 첫 호출: batch 실패 → 개별 발송으로 대체되어 활성 구독자 전원이 받음
+    const r1 = await sendWeeklyDigests(wk, { sendEmpty: true, recent: true }, batchMailer);
+    assert.equal(batchCalls.length, 1);
+    assert.equal(r1.sent, nActive);
+    assert.equal(r1.failed.length, 0);
+    assert.equal(sent.length - before, nActive);
+    const wkKey = wk.toISOString().slice(0, 10);
+    const rows = db.tables.deliveries.filter((d) => d.week_start === wkKey);
+    assert.equal(rows.length, nActive);
+    assert.ok(rows.every((d) => d.status === "sent" && String(d.provider_message_id).startsWith("single_")));
+    // 두 번째 호출: 이미 sent 이므로 전부 skipped, 발송 없음
+    const r2 = await sendWeeklyDigests(wk, { sendEmpty: true, recent: true }, batchMailer);
+    assert.equal(r2.sent, 0);
+    assert.equal(r2.skipped, nActive);
+    // 기록 삭제 후 재호출: 이번엔 batch 성공 경로
+    db.tables.deliveries = db.tables.deliveries.filter((d) => d.week_start !== wkKey);
+    const r3 = await sendWeeklyDigests(wk, { sendEmpty: true, recent: true }, batchMailer);
+    assert.equal(r3.sent, nActive);
+    assert.equal(batchCalls[batchCalls.length - 1], nActive);
+    assert.ok(db.tables.deliveries.filter((d) => d.week_start === wkKey).every((d) => String(d.provider_message_id).startsWith("batch_")));
+    assert.ok(db.tables.subscribers.filter((x) => x.active).every((x) => x.last_sent_at), "last_sent_at 갱신");
+  });
+
   await ok("테스트 발송(only): 지정한 한 명에게만 가고 deliveries 에 기록하지 않는다", async () => {
     const before = db.tables.deliveries.length;
     const n = sent.length;
