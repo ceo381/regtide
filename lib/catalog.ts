@@ -36,6 +36,7 @@ export const PRODUCT_CATEGORIES = [
   "멸균 제품",
   "기타",
 ] as const;
+export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
 
 const KR_SOURCES = ["mfds_rss:data0009", "mfds_rss:data0005", "mfds_rss:data0006", "mfds_rss:data0007", "mfds_rss:data0013", "mfds_rss:ntc0003", "mfds_rss:ntc0004", "mfds_rss:ntc0021", "mfds_rss:seohan001", "law_go_kr"];
 const US_SOURCES = ["federal_register"];
@@ -472,4 +473,30 @@ export function groupedCatalog() {
     (byJurisdiction[item.jurisdiction][item.group] ??= []).push(item);
   }
   return byJurisdiction;
+}
+
+/**
+ * 등급·유형별 기본 선택 세트 — 품목을 추가하면 이 항목들이 미리 선택된 상태로 시작한다.
+ * 원칙: 국내 허가·GMP 기본(모든 유형 공통) + 유형에서 확실히 따라오는 규격만. 해외(미국·EU)는 진출 여부를 알 수 없으므로
+ * 기본에 넣지 않고 빠른 선택 세트로 남긴다. 신청자는 언제든 항목을 더하거나 뺄 수 있다.
+ */
+const KR_BASE = ["kr-mdact", "kr-approval", "kr-classification", "kr-gmp", "kr-standards", "kr-vigilance", "kr-udi"];
+export const DEFAULT_CATALOG_BY_CATEGORY: Record<ProductCategory, string[]> = {
+  "1등급": ["kr-mdact", "kr-approval", "kr-classification", "kr-gmp", "kr-udi", "kr-labeling-ad"],
+  "2등급": [...KR_BASE, "iso-13485", "iso-14971"],
+  "3등급": [...KR_BASE, "kr-clinical", "iso-13485", "iso-14971", "iso-10993"],
+  "4등급": [...KR_BASE, "kr-clinical", "iso-13485", "iso-14971", "iso-10993", "iso-14155"],
+  "체외진단의료기기": ["kr-ivd-act", "kr-approval", "kr-gmp", "kr-standards", "kr-vigilance", "kr-udi", "iso-13485", "iso-14971"],
+  "디지털의료기기(SaMD)": ["kr-mdact", "kr-digital-act", "kr-approval", "kr-classification", "kr-gmp", "kr-cyber", "kr-udi", "iec-62304", "iec-81001-5-1", "iec-62366-1", "iso-14971", "iso-13485"],
+  "능동형 전기·전자기기": [...KR_BASE, "iec-60601-1", "iec-60601-1-2", "iec-60601-1-x", "iec-62366-1", "iso-14971", "iso-13485"],
+  "이식형": [...KR_BASE, "kr-clinical", "iso-10993", "iso-11607", "iso-14971", "iso-13485"],
+  "멸균 제품": [...KR_BASE, "iso-11607", "iso-17664", "iso-10993", "iso-13485"],
+  "기타": [...KR_BASE],
+};
+
+/** 품목 표시 이름 — 품목명은 선택 입력이므로 비어 있으면 등급·유형으로 대신 표기 */
+export function productLabel(p: { name?: string | null; category: string }, index?: number) {
+  const n = (p.name ?? "").trim();
+  if (n) return n;
+  return index != null ? `${p.category} 품목 ${index + 1}` : `${p.category} 품목`;
 }

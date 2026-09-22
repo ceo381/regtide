@@ -1,4 +1,4 @@
-import { CATALOG_BY_ID } from "@/lib/catalog";
+import { productLabel, CATALOG_BY_ID } from "@/lib/catalog";
 import { resendMailer, type Mailer } from "@/lib/digest";
 import { mailFrom, selectAll, supabaseAdmin, type SubscriberRow } from "@/lib/supabase";
 import { consecutiveZeroRuns, readLastCollect, type LastCollect } from "@/lib/collect";
@@ -115,7 +115,7 @@ export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: str
 
   const newList = s.newSubscribers.length
     ? `<ul style="margin:8px 0 0;padding-left:18px;color:#344054;font-size:14px">${s.newSubscribers
-        .map((x) => `<li>${esc(x.email)} — ${x.products.map((p) => esc(p.name)).join(", ") || "품목 없음"} (${x.catalog_ids.length}개 규격) · ${fmtKst(x.created_at)}</li>`)
+        .map((x) => `<li>${esc(x.email)} — ${x.products.map((p, i) => esc(productLabel(p, i))).join(", ") || "품목 없음"} (${x.catalog_ids.length}개 규격) · ${fmtKst(x.created_at)}</li>`)
         .join("")}</ul>`
     : `<p style="margin:8px 0 0;color:#667085;font-size:14px">신규 구독 없음</p>`;
 

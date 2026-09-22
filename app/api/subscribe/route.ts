@@ -13,7 +13,7 @@ const Body = z.object({
   products: z
     .array(
       z.object({
-        name: z.string().trim().min(1).max(100),
+        name: z.string().trim().max(100).default(""), // 품목명은 선택 입력 (2026-09-22). 비어 있으면 등급·유형으로 표시
         category: z.enum(PRODUCT_CATEGORIES),
         catalogIds: z.array(z.string()).min(1).max(60),
       }),
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
         catalog_ids: catalogIds,
         consent_at: now.toISOString(),
         consent_ip: ip,
-        consent_version: "v1",
+        consent_version: "v2", // v2 (2026-09-22): 품목명 선택 항목 분리, 확인 메일·유입 경로 항목 고지
         active: true,
         updated_at: now.toISOString(),
         ...channel,

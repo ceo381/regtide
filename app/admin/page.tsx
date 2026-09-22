@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/admin-auth";
 import { loadDashboard } from "@/lib/admin-data";
-import { CATALOG_BY_ID, JURISDICTION_LABEL, type Jurisdiction } from "@/lib/catalog";
+import { CATALOG_BY_ID, JURISDICTION_LABEL, productLabel, type Jurisdiction } from "@/lib/catalog";
 import { describeSource } from "@/lib/source-info";
 import { ADMIN_EMAIL, MILESTONE_EVERY } from "@/lib/admin-report";
 import AdminTabs from "./AdminTabs";
@@ -84,8 +84,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         rows={d.subscribers.map((s) => ({
           id: s.id,
           email: s.email,
-          productsLabel: s.products.map((p) => `${p.name} (${p.category})`).join(", "),
-          productSearch: s.products.map((p) => p.name).join(" ").toLowerCase(),
+          productsLabel: s.products.map((p, i) => (p.name?.trim() ? `${p.name} (${p.category})` : productLabel(p, i))).join(", "),
+          productSearch: s.products.map((p) => `${p.name ?? ""} ${p.category}`).join(" ").toLowerCase(),
           catalogCount: s.catalog_ids.length,
           ref: s.ref ?? "",
           createdLabel: fmtDay(s.created_at),

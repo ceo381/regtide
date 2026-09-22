@@ -1,5 +1,5 @@
 import { Resend } from "resend";
-import { CATALOG, CATALOG_BY_ID, JURISDICTION_LABEL, type Jurisdiction } from "@/lib/catalog";
+import { CATALOG, CATALOG_BY_ID, JURISDICTION_LABEL, productLabel, type Jurisdiction } from "@/lib/catalog";
 import { mailFrom, selectAll, supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { COVERAGE, describeSource, sourcesUsed } from "@/lib/source-info";
 import { COLLECT_LOOKBACK_DAYS } from "@/lib/collect";
@@ -79,7 +79,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
   for (const u of updates) (byJ[u.jurisdiction as Jurisdiction] ??= []).push(u);
 
   const productLine = sub.products.length
-    ? `<p style="margin:0 0 16px;color:#475467;font-size:14px">모니터링 품목: ${sub.products.map((p) => esc(p.name)).join(", ")}</p>`
+    ? `<p style="margin:0 0 16px;color:#475467;font-size:14px">모니터링 품목: ${sub.products.map((p, i) => esc(productLabel(p, i))).join(", ")}</p>`
     : "";
 
   const sections = (Object.keys(byJ) as Jurisdiction[])

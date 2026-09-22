@@ -1,4 +1,4 @@
-import { CATALOG_BY_ID, JURISDICTION_LABEL, type Jurisdiction } from "@/lib/catalog";
+import { CATALOG_BY_ID, JURISDICTION_LABEL, productLabel, type Jurisdiction } from "@/lib/catalog";
 import { COVERAGE } from "@/lib/source-info";
 import { CANDIDATE_DAYS, resendMailer, type Mailer } from "@/lib/digest";
 import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, siteUrl } from "@/lib/email-common";
@@ -35,7 +35,7 @@ export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; no
   const firstSend = nextMondaySend(now);
 
   const products = sub.products.length
-    ? `<ul style="margin:6px 0 0;padding-left:18px;color:#344054;font-size:14px;line-height:1.7">${sub.products.map((p) => `<li><strong>${esc(p.name)}</strong> <span style="color:#667085">(${esc(p.category)})</span></li>`).join("")}</ul>`
+    ? `<ul style="margin:6px 0 0;padding-left:18px;color:#344054;font-size:14px;line-height:1.7">${sub.products.map((p, i) => `<li><strong>${esc(productLabel(p, i))}</strong>${p.name?.trim() ? ` <span style="color:#667085">(${esc(p.category)})</span>` : ""}</li>`).join("")}</ul>`
     : "";
 
   const byJ: Partial<Record<Jurisdiction, string[]>> = {};

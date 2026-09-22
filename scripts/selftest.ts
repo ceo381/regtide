@@ -426,6 +426,22 @@ async function main() {
     assert.equal(db.tables.subscribers.filter((s) => s.email === "ra@company.co.kr").length, 1);
     assert.equal(r2.json.welcome, "skipped", "설정 변경 직후 반복 신청에는 확인 메일을 보내지 않음");
     assert.equal(welcomes.length, 1);
+    // 품목명은 선택 입력: 비워도(또는 아예 없어도) 저장되고, 표시 이름은 등급·유형으로 대체
+    const r3 = await call({ email: "noname@company.co.kr", consent: true, products: [{ name: "", category: "2등급", catalogIds: ["kr-mdact"] }, { category: "이식형", catalogIds: ["iso-10993"] }] });
+    assert.equal(r3.status, 200, "품목명 없이도 구독 가능");
+    const nn = db.tables.subscribers.find((s) => s.email === "noname@company.co.kr")!;
+    assert.deepEqual((nn.products as { name: string }[]).map((p) => p.name), ["", ""]);
+    assert.equal(nn.consent_version, "v2", "동의 문구 버전 기록");
+    const w = welcomes.find((m) => m.to === "noname@company.co.kr")!;
+    assert.ok(w.html.includes("2등급 품목 1") && w.html.includes("이식형 품목 2"), "확인 메일에 등급·유형으로 표시");
+    const { renderDigestHtml } = await import("@/lib/digest");
+    const dh = renderDigestHtml({ id: "x", email: String(nn.email), unsubscribe_token: "t", products: nn.products as never, catalog_ids: ["kr-mdact"], active: true, last_sent_at: null }, [], { start: new Date(), end: new Date() });
+    assert.ok(dh.includes("모니터링 품목: 2등급 품목 1, 이식형 품목 2"), "주간 리포트에도 등급·유형으로 표시");
+    const { DEFAULT_CATALOG_BY_CATEGORY, CATALOG_BY_ID, PRODUCT_CATEGORIES } = await import("@/lib/catalog");
+    for (const c of PRODUCT_CATEGORIES) {
+      assert.ok(DEFAULT_CATALOG_BY_CATEGORY[c].length >= 5, `${c} 기본 세트`);
+      for (const id of DEFAULT_CATALOG_BY_CATEGORY[c]) assert.ok(CATALOG_BY_ID[id], `${c} 기본 세트의 ${id} 가 카탈로그에 존재`);
+    }
     __setWelcomeMailerForTest(null);
   });
   await ok("구독 확인 메일: 신청자 본인에게만, 품목·규격·발송 주기·첫 리포트 예정일·면책·구독해지 링크 포함, 실패해도 구독은 성공", async () => {
