@@ -7,6 +7,7 @@ export interface SubRow {
   productsLabel: string;
   productSearch: string;
   catalogCount: number;
+  ref: string;
   createdLabel: string;
   lastSentLabel: string;
   active: boolean;
@@ -18,25 +19,26 @@ export default function SubscriberTable({ rows }: { rows: SubRow[] }) {
   const filtered = useMemo(() => {
     const k = q.trim().toLowerCase();
     if (!k) return rows;
-    return rows.filter((r) => r.email.toLowerCase().includes(k) || r.productSearch.includes(k));
+    return rows.filter((r) => r.email.toLowerCase().includes(k) || r.productSearch.includes(k) || r.ref.toLowerCase().includes(k));
   }, [rows, q]);
 
   return (
     <>
       <div className="admin-search">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="이메일 또는 품목명 검색" aria-label="구독자 검색" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="이메일 · 품목명 · 채널(ref) 검색" aria-label="구독자 검색" />
         {q && <button type="button" className="btn ghost" onClick={() => setQ("")}>초기화</button>}
       </div>
       <p className="sub">{filtered.length}명 표시 · 비활성화하면 발송 대상에서 제외되고, 삭제하면 이메일이 즉시 삭제됩니다(구독해지와 동일).</p>
       <div className="table-wrap">
         <table className="admin-table">
-          <thead><tr><th>이메일</th><th>품목</th><th>규격</th><th>가입</th><th>마지막 발송</th><th>상태</th><th></th></tr></thead>
+          <thead><tr><th>이메일</th><th>품목</th><th>규격</th><th>채널</th><th>가입</th><th>마지막 발송</th><th>상태</th><th></th></tr></thead>
           <tbody>
             {filtered.map((s) => (
               <tr key={s.id} className={s.active ? "" : "inactive"}>
                 <td>{s.email}</td>
                 <td>{s.productsLabel || "—"}</td>
                 <td className="num">{s.catalogCount}</td>
+                <td>{s.ref || <span style={{ color: "#98a2b3" }}>—</span>}</td>
                 <td>{s.createdLabel}</td>
                 <td>{s.lastSentLabel}</td>
                 <td>{s.active ? "활성" : "비활성"}</td>

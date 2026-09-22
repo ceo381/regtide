@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CATALOG_BY_ID, JURISDICTION_LABEL, PRODUCT_CATEGORIES, groupedCatalog, type Jurisdiction } from "@/lib/catalog";
 
@@ -35,6 +35,23 @@ export default function SubscribeForm() {
   const [consent, setConsent] = useState(false);
   const [status, setStatus] = useState<{ kind: "ok" | "err" | "info"; msg: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // 유입 채널: URL 의 ?ref=코드 를 최초 1회 저장(first-touch). 새로고침·다른 페이지 방문 후 구독해도 유지
+  const [channel, setChannel] = useState<{ ref: string; landedAt: string; referrer: string } | null>(null);
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const fromUrl = (url.searchParams.get("ref") ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40);
+      const stored = JSON.parse(localStorage.getItem("regtide_ref") ?? "null") as { ref: string; landedAt: string; referrer: string } | null;
+      if (stored?.ref) { setChannel(stored); return; }
+      if (fromUrl) {
+        let referrer = "";
+        try { referrer = document.referrer ? new URL(document.referrer).host : ""; } catch { /* ignore */ }
+        const c = { ref: fromUrl, landedAt: new Date().toISOString(), referrer };
+        localStorage.setItem("regtide_ref", JSON.stringify(c));
+        setChannel(c);
+      }
+    } catch { /* localStorage 불가 환경이면 채널 없이 진행 */ }
+  }, []);
 
   const totalIds = useMemo(() => new Set(products.flatMap((p) => p.catalogIds)), [products]);
 
@@ -75,6 +92,9 @@ export default function SubscribeForm() {
           email,
           consent,
           products: products.map(({ name, category, catalogIds }) => ({ name, category, catalogIds })),
+          ref: channel?.ref ?? "",
+          landedAt: channel?.landedAt ?? "",
+          referrer: channel?.referrer ?? "",
         }),
       });
       const json = await res.json();

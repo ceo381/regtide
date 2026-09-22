@@ -19,6 +19,10 @@ const Body = z.object({
     )
     .min(1, "품목을 1개 이상 등록하세요.")
     .max(30),
+  // 유입 채널 (선택). 링크의 ?ref=코드 를 브라우저가 기억했다가 함께 보냄
+  ref: z.string().trim().toLowerCase().regex(/^[a-z0-9_-]{1,40}$/).optional().or(z.literal("").transform(() => undefined)),
+  landedAt: z.string().datetime().optional().or(z.literal("").transform(() => undefined)),
+  referrer: z.string().trim().max(120).optional().or(z.literal("").transform(() => undefined)),
 });
 
 // 아주 단순한 IP 기준 rate limit (서버리스 인스턴스 단위)
@@ -39,15 +43,18 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "입력값이 올바르지 않습니다." }, { status: 400 });
   }
-  const { email, products } = parsed.data;
+  const { email, products, ref, landedAt, referrer } = parsed.data;
 
   const catalogIds = [...new Set(products.flatMap((p) => p.catalogIds))].filter((id) => CATALOG_BY_ID[id]);
   if (catalogIds.length === 0) return NextResponse.json({ error: "유효한 규격·인증을 선택하세요." }, { status: 400 });
 
   const sb = supabaseAdmin();
   // 신규 구독인지 확인 (기존 구독자의 설정 변경이면 마일스톤 알림 대상이 아님)
-  const { data: existing } = await sb.from("subscribers").select("id").eq("email", email).maybeSingle();
+  const { data: existing } = await sb.from("subscribers").select("id, ref").eq("email", email).maybeSingle();
   const isNew = !existing;
+  // 유입 채널은 최초 유입(first-touch)만 기록. 기존 구독자가 설정을 바꿔도 처음 채널을 유지
+  const keepRef = existing?.ref as string | undefined;
+  const channel = keepRef ? {} : { ref: ref ?? null, landed_at: landedAt ?? null, referrer: referrer ?? null };
 
   const { error } = await sb.from("subscribers").upsert(
     {
@@ -59,6 +66,7 @@ export async function POST(req: NextRequest) {
       consent_version: "v1",
       active: true,
       updated_at: new Date().toISOString(),
+      ...channel,
     },
     { onConflict: "email" },
   );

@@ -23,6 +23,7 @@ import { allAdapters, type SourceAdapter } from "@/lib/sources";
 import { describeSource } from "@/lib/source-info";
 import { consecutiveZeroRuns } from "@/lib/collect";
 import { checkCollection, checkDisclaimerTemplate } from "@/lib/health";
+import { computeChannels } from "@/lib/admin-data";
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://regtide.example";
 process.env.MAIL_FROM = "RegTide <test@regtide.example>";
@@ -322,6 +323,23 @@ async function main() {
     const zero = checkCollection({ ...fresh, bySource: { "mfds_rss:ntc0021": 0 }, history: hist });
     assert.ok(zero.some((i) => i.level === "critical" && i.title.includes("수집 누락 경보")), "7회 연속 0건 → 누락 경보");
     assert.ok(checkCollection(null).some((i) => i.title === "수집 기록 없음"));
+  });
+
+  await ok("유입 채널: ref 가 저장되고, 재구독 시 최초 채널이 유지되며, 채널 통계가 계산된다", async () => {
+    const { POST } = await import("@/app/api/subscribe/route");
+    const body = (email: string, ref: string, landedAt?: string) => new Request("http://x/api/subscribe", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "9.9.9.9" }, body: JSON.stringify({ email, consent: true, products: [{ name: "테스트", category: "3등급", catalogIds: ["kr-gmp"] }], ref, landedAt: landedAt ?? "", referrer: "open.kakao.com" }) });
+    const landed = new Date(Date.now() - 5 * 60_000).toISOString();
+    assert.equal((await POST(body("ch1@corp.co.kr", "openchat2", landed) as never)).status, 200);
+    const row = db.tables.subscribers.find((s) => s.email === "ch1@corp.co.kr")!;
+    assert.equal(row.ref, "openchat2");
+    assert.equal(row.referrer, "open.kakao.com");
+    assert.equal((await POST(body("ch1@corp.co.kr", "linkedin") as never)).status, 200);
+    assert.equal(db.tables.subscribers.find((s) => s.email === "ch1@corp.co.kr")!.ref, "openchat2", "최초 유입 채널 유지");
+    assert.equal((await POST(body("ch2@naver.com", "BAD ref!") as never)).status, 400, "허용되지 않는 ref 형식은 거부");
+    const { channels } = computeChannels(db.tables.subscribers as never);
+    const oc = channels.find((c) => c.ref === "openchat2")!;
+    assert.ok(oc && oc.total === 1 && oc.companyDomains === 1 && oc.medianConvertMin! >= 4 && oc.medianConvertMin! <= 6 && oc.quickRate === 1 && oc.highRiskShare === 1);
+    assert.ok(channels.some((c) => c.ref === "(직접/미상)"), "ref 없는 구독자는 직접/미상으로 집계");
   });
 
   console.log("\n[6] 구독 API 입력 검증");

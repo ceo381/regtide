@@ -5,6 +5,7 @@ import { CATALOG_BY_ID, JURISDICTION_LABEL, type Jurisdiction } from "@/lib/cata
 import { describeSource } from "@/lib/source-info";
 import { ADMIN_EMAIL, MILESTONE_EVERY } from "@/lib/admin-report";
 import AdminTabs from "./AdminTabs";
+import { NO_REF } from "@/lib/admin-data";
 import SubscriberTable from "./SubscriberTable";
 
 export const metadata = { title: "관리자 대시보드 · RegTide", robots: { index: false, follow: false } };
@@ -83,6 +84,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           productsLabel: s.products.map((p) => `${p.name} (${p.category})`).join(", "),
           productSearch: s.products.map((p) => p.name).join(" ").toLowerCase(),
           catalogCount: s.catalog_ids.length,
+          ref: s.ref ?? "",
           createdLabel: fmtDay(s.created_at),
           lastSentLabel: fmtDay(s.last_sent_at),
           active: s.active,
@@ -136,6 +138,69 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         </div>
       )}
     </section>
+  );
+
+  const pct = (x: number | null) => (x == null ? "—" : `${Math.round(x * 100)}%`);
+  const mins = (m: number | null) => (m == null ? "—" : m < 1 ? "1분 미만" : m < 60 ? `${Math.round(m)}분` : m < 1440 ? `${(m / 60).toFixed(1)}시간` : `${(m / 1440).toFixed(1)}일`);
+  const refKeys = d.channels.map((c) => c.ref);
+  const channels = (
+    <>
+      <section className="card">
+        <h2>채널별 구독자</h2>
+        <p className="sub">
+          안내 링크 뒤에 <code>?ref=코드</code> 를 붙이면 그 링크로 처음 접속한 사람의 구독이 해당 채널로 집계됩니다(최초 유입 기준, 이후 설정 변경에도 유지).
+          "{NO_REF}"은 ref 없이 들어온 구독자입니다. 전환 소요는 링크 접속 → 구독 완료까지의 중앙값이고, 즉시 전환은 접속 10분 내 구독한 비율입니다.
+        </p>
+        <div className="table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>채널(ref)</th><th>구독자</th><th>활성</th><th>회사 도메인</th><th>개인 메일</th><th>24시간</th><th>7일</th><th>첫 구독</th><th>마지막 구독</th><th>전환 소요(중앙값)</th><th>즉시 전환</th><th>품목/인</th><th>3·4등급 비율</th></tr></thead>
+            <tbody>
+              {d.channels.map((c) => (
+                <tr key={c.ref}>
+                  <td><strong>{c.ref}</strong></td>
+                  <td className="num">{c.total}</td>
+                  <td className="num">{c.active}</td>
+                  <td className="num">{c.companyDomains}</td>
+                  <td className="num">{c.personal}</td>
+                  <td className="num">{c.last24h}</td>
+                  <td className="num">{c.last7d}</td>
+                  <td>{fmt(c.firstAt)}</td>
+                  <td>{fmt(c.lastAt)}</td>
+                  <td>{mins(c.medianConvertMin)}</td>
+                  <td className="num">{pct(c.quickRate)}</td>
+                  <td className="num">{c.productsPerSub.toFixed(1)}</td>
+                  <td className="num">{pct(c.highRiskShare)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="card">
+        <h2>최근 14일 채널별 신규 구독 (일별)</h2>
+        <div className="table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>날짜</th>{refKeys.map((k) => <th key={k} className="num">{k}</th>)}<th className="num">합계</th></tr></thead>
+            <tbody>
+              {d.channelDaily.map((row) => {
+                const sum = Object.values(row.counts).reduce((a, b) => a + b, 0);
+                return (
+                  <tr key={row.day} className={sum === 0 ? "inactive" : ""}>
+                    <td>{row.day.slice(5)}</td>
+                    {refKeys.map((k) => <td key={k} className="num">{row.counts[k] || ""}</td>)}
+                    <td className="num"><strong>{sum || ""}</strong></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="sub" style={{ marginTop: 12 }}>
+          첫 채널(오픈채팅 1,632명 방)의 기존 구독자는 ref 가 비어 있습니다. Supabase SQL 로 일괄 표시하세요:{" "}
+          <code>update subscribers set ref = 'openchat1' where ref is null and created_at &lt; '2026-09-23';</code>
+        </p>
+      </section>
+    </>
   );
 
   const ops = (
@@ -204,6 +269,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         tabs={[
           { id: "overview", label: "개요", content: overview },
           { id: "subscribers", label: `구독자 (${d.subscribers.length})`, content: subscribers },
+          { id: "channels", label: `채널 (${d.channels.length})`, content: channels },
           { id: "updates", label: "수집 항목", content: updates },
           { id: "deliveries", label: "발송 기록", content: deliveries },
           { id: "ops", label: "운영 작업", content: ops },

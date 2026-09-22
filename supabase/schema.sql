@@ -15,6 +15,9 @@ create table if not exists subscribers (
   active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  ref text,                                  -- 유입 채널 코드 (?ref=openchat2). 최초 유입(first-touch) 고정
+  landed_at timestamptz,                     -- ref 링크로 처음 접속한 시각 (전환 소요 시간 계산용)
+  referrer text,                             -- 접속 시 document.referrer 의 호스트 (선택)
   last_sent_at timestamptz
 );
 create index if not exists subscribers_active_idx on subscribers(active) where active;
@@ -67,3 +70,9 @@ alter table subscribers enable row level security;
 alter table updates enable row level security;
 alter table page_snapshots enable row level security;
 alter table deliveries enable row level security;
+
+-- 2026-09-22 유입 채널 추적 (기존 프로젝트는 아래 3줄만 실행)
+alter table subscribers add column if not exists ref text;
+alter table subscribers add column if not exists landed_at timestamptz;
+alter table subscribers add column if not exists referrer text;
+create index if not exists subscribers_ref_idx on subscribers(ref);

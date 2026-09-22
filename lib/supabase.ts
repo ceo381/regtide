@@ -27,6 +27,9 @@ export interface SubscriberRow {
   catalog_ids: string[];
   active: boolean;
   last_sent_at: string | null;
+  ref?: string | null;
+  landed_at?: string | null;
+  referrer?: string | null;
 }
 
 export interface UpdateRow {

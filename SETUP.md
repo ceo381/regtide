@@ -516,6 +516,38 @@ ADMIN_SESSION_SECRET=랜덤문자열     # 선택. 없으면 CRON_SECRET 으로 
 
 ---
 
+## Q. 유입 채널 추적 (2026-09-22)
+
+### Q-1. 사용법
+- 안내 링크 뒤에 `?ref=코드` 를 붙입니다. 코드는 영문 소문자·숫자·`_`·`-` 만, 40자 이내. 예: `https://regtide-pi.vercel.app/?ref=openchat2`
+- 그 링크로 처음 접속한 브라우저는 코드·접속 시각·이전 페이지 호스트를 기억했다가(localStorage) 구독 시 함께 보냅니다. 새로고침·다른 페이지를 거쳐도 유지됩니다.
+- **최초 유입(first-touch) 고정**: 기존 구독자가 다른 링크로 설정을 바꿔도 처음 채널이 유지됩니다.
+- 코드 명명 예: `openchat1`(첫 방) · `openchat2`… · `linkedin` · `kmdia` · `medinet` · `press-mdtoday` · `forward`(메일 하단 전달 링크) · `ktl`(파트너)
+
+### Q-2. 기존 구독자 일괄 표시 (배포 후 1회)
+첫 방(오픈채팅 1,632명)의 기존 구독자는 ref 가 비어 있으므로 Supabase SQL Editor 에서:
+```sql
+update subscribers set ref = 'openchat1' where ref is null and created_at < '2026-09-23';
+```
+
+### Q-3. DB 마이그레이션 (배포 전 필수)
+```sql
+alter table subscribers add column if not exists ref text;
+alter table subscribers add column if not exists landed_at timestamptz;
+alter table subscribers add column if not exists referrer text;
+create index if not exists subscribers_ref_idx on subscribers(ref);
+```
+(컬럼이 없으면 구독 API 가 500 을 냅니다 → 반드시 배포 전에 실행)
+
+### Q-4. 대시보드 "채널" 탭
+채널별 구독자·활성·회사 도메인·개인 메일·24시간/7일 신규·첫/마지막 구독 시각·**전환 소요(링크 접속→구독 중앙값)**·**즉시 전환(10분 내 비율)**·품목/인·3·4등급 비율, 그리고 최근 14일 일별 채널 매트릭스. 구독자 탭에도 채널 컬럼과 검색이 추가됨.
+
+### Q-5. 개인정보·면책 영향 (P절 검증)
+- 수집 항목이 늘었으므로 `app/privacy/page.tsx` 표에 "유입 경로 코드·최초 접속 시각·이전 페이지 호스트(통계 목적, 개인 식별 불사용)" 행을 추가하고 적용일자를 2026-09-22 로 갱신했습니다.
+- 수집 파이프라인·면책 문구는 변경 없음. selftest 20개 통과.
+
+---
+
 ## 자주 만나는 문제
 
 | 증상 | 원인·해결 |

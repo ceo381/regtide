@@ -5,17 +5,95 @@ import { computeHealth, type HealthReport } from "@/lib/health";
 /** 대시보드용 데이터 묶음 (서버 컴포넌트에서 1회 호출) */
 export interface DashboardData {
   stats: AdminStats;
-  subscribers: (SubscriberRow & { created_at: string; consent_at: string | null; last_sent_at: string | null })[];
+  subscribers: (SubscriberRow & { created_at: string; consent_at: string | null; last_sent_at: string | null; ref?: string | null; landed_at?: string | null; referrer?: string | null })[];
   recentUpdates: UpdateRow[];
   deliveriesThisWeek: { email: string; status: string; sent_at: string; error: string | null; update_count: number }[];
   signupsByDay: { day: string; count: number }[]; // 최근 14일, KST 날짜
   weekStart: string;
   health: HealthReport;
+  channels: ChannelStat[];
+  channelDaily: { day: string; counts: Record<string, number> }[]; // 최근 14일 채널별 신규
 }
 
-function kstDay(iso: string) {
-  return new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().slice(0, 10);
+export interface ChannelStat {
+  ref: string; // "(직접/미상)" 포함
+  total: number;
+  active: number;
+  companyDomains: number;
+  personal: number;
+  last7d: number;
+  last24h: number;
+  firstAt: string | null;
+  lastAt: string | null;
+  /** landed_at → created_at 중앙값(분). landed_at 없는 구독자는 제외 */
+  medianConvertMin: number | null;
+  /** 접속 후 10분 내 구독 비율 (즉시 전환) */
+  quickRate: number | null;
+  productsPerSub: number;
+  highRiskShare: number; // 3·4등급 품목 비율
 }
+
+const PERSONAL = new Set(["naver.com", "gmail.com", "daum.net", "hanmail.net", "nate.com", "kakao.com", "hotmail.com", "outlook.com", "yahoo.com", "icloud.com", "live.com", "me.com"]);
+export const NO_REF = "(직접/미상)";
+
+export function computeChannels(subs: DashboardData["subscribers"], now = new Date()): { channels: ChannelStat[]; channelDaily: DashboardData["channelDaily"] } {
+  const groups = new Map<string, DashboardData["subscribers"]>();
+  for (const s of subs) {
+    const k = (s.ref && s.ref.trim()) || NO_REF;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(s);
+  }
+  const h24 = now.getTime() - 24 * 3600_000;
+  const d7 = now.getTime() - 7 * 86400_000;
+  const median = (xs: number[]) => { if (!xs.length) return null; const a = [...xs].sort((x, y) => x - y); const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+
+  const channels: ChannelStat[] = [...groups.entries()].map(([ref, list]) => {
+    const domains = new Set<string>();
+    let personal = 0;
+    const convert: number[] = [];
+    let products = 0, highRisk = 0, totalProducts = 0;
+    let firstAt: string | null = null, lastAt: string | null = null;
+    for (const s of list) {
+      const dom = (s.email.split("@")[1] ?? "").toLowerCase();
+      if (PERSONAL.has(dom)) personal++; else if (dom) domains.add(dom);
+      if (s.landed_at && Number.isFinite(ms(s.created_at))) convert.push((ms(s.created_at) - ms(s.landed_at)) / 60_000);
+      products += s.products.length;
+      for (const pr of s.products) { totalProducts++; if (/^[34]등급/.test(pr.category)) highRisk++; }
+      if (s.created_at) {
+        if (!firstAt || s.created_at < firstAt) firstAt = s.created_at;
+        if (!lastAt || s.created_at > lastAt) lastAt = s.created_at;
+      }
+    }
+    const quick = convert.filter((m) => m >= 0 && m <= 10).length;
+    return {
+      ref, total: list.length, active: list.filter((s) => s.active).length,
+      companyDomains: domains.size, personal,
+      last7d: list.filter((s) => ms(s.created_at) >= d7).length,
+      last24h: list.filter((s) => ms(s.created_at) >= h24).length,
+      firstAt, lastAt,
+      medianConvertMin: median(convert.filter((m) => m >= 0)),
+      quickRate: convert.length ? quick / convert.length : null,
+      productsPerSub: list.length ? products / list.length : 0,
+      highRiskShare: totalProducts ? highRisk / totalProducts : 0,
+    };
+  }).sort((a, b) => b.total - a.total);
+
+  const kst = new Date(now.getTime() + 9 * 3600_000);
+  const channelDaily: DashboardData["channelDaily"] = [];
+  for (let i = 13; i >= 0; i--) {
+    const day = new Date(kst.getTime() - i * 86400_000).toISOString().slice(0, 10);
+    const counts: Record<string, number> = {};
+    for (const [ref, list] of groups) counts[ref] = list.filter((s) => kstDay(s.created_at) === day).length;
+    channelDaily.push({ day, counts });
+  }
+  return { channels, channelDaily };
+}
+
+function kstDay(iso: string | null | undefined) {
+  const t = iso ? new Date(iso).getTime() : NaN;
+  return Number.isFinite(t) ? new Date(t + 9 * 3600_000).toISOString().slice(0, 10) : "";
+}
+const ms = (iso: string | null | undefined) => { const t = iso ? new Date(iso).getTime() : NaN; return Number.isFinite(t) ? t : NaN; };
 
 export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const sb = supabaseAdmin();
@@ -55,8 +133,11 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     if (d in days) days[d]++;
   }
 
+  const { channels, channelDaily } = computeChannels(subs as DashboardData["subscribers"], now);
   return {
     stats,
+    channels,
+    channelDaily,
     subscribers: subs as DashboardData["subscribers"],
     recentUpdates: (upsQ.data ?? []) as UpdateRow[],
     deliveriesThisWeek,
