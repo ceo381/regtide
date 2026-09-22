@@ -486,6 +486,16 @@ async function main() {
     assert.equal(bad.headers.get("location"), "https://regtide.example/?unsub=invalid");
   });
 
+  await ok("대시보드 표 정렬: 숫자·문자·날짜 정렬, 빈 값은 항상 맨 뒤, 동률은 원래 순서", async () => {
+    const { sortRows } = await import("@/app/admin/useSort");
+    const rows = [{ n: 2, s: "나", d: "2026-09-02" }, { n: null, s: "", d: null }, { n: 10, s: "가", d: "2026-09-10" }, { n: 2, s: "다", d: "2026-09-01" }];
+    assert.deepEqual(sortRows(rows, (r) => r.n, "desc").map((r) => r.n), [10, 2, 2, null]);
+    assert.deepEqual(sortRows(rows, (r) => r.n, "asc").map((r) => r.n), [2, 2, 10, null], "빈 값은 오름차순에서도 맨 뒤");
+    assert.deepEqual(sortRows(rows, (r) => r.n, "asc").map((r) => r.s), ["나", "다", "가", ""], "동률(2,2)은 원래 순서 유지");
+    assert.deepEqual(sortRows(rows, (r) => r.s, "asc").map((r) => r.s), ["가", "나", "다", ""]);
+    assert.deepEqual(sortRows(rows, (r) => r.d, "desc").map((r) => r.d), ["2026-09-10", "2026-09-02", "2026-09-01", null]);
+  });
+
   globalThis.fetch = realFetch;
   console.log(`\n${process.exitCode ? "실패한 항목이 있습니다." : `모든 검증 통과 (${passed}개)`}\n`);
 }

@@ -1,5 +1,6 @@
 "use client";
 import { Fragment, useState } from "react";
+import { useSort } from "./useSort";
 
 export interface ChannelView {
   code: string;
@@ -24,7 +25,21 @@ export interface ChannelView {
   sincePost: string;
   within24h: string;
   within72h: string;
+  /** 정렬용 원시값 (표시 문자열과 별개) */
+  raw: { conversionRate: number | null; hoursSincePost: number | null; medianConvertMin: number | null; highRiskShare: number; firstAt: string | null; lastAt: string | null };
 }
+
+const COLS = {
+  name: (c: ChannelView) => c.name ?? c.code,
+  kind: (c: ChannelView) => c.kind,
+  total: (c: ChannelView) => c.total,
+  conversion: (c: ChannelView) => c.raw.conversionRate,
+  sincePost: (c: ChannelView) => c.raw.hoursSincePost,
+  company: (c: ChannelView) => c.companyDomains,
+  recent: (c: ChannelView) => c.last7d,
+  convert: (c: ChannelView) => c.raw.medianConvertMin,
+  highRisk: (c: ChannelView) => c.raw.highRiskShare,
+};
 
 const KINDS = ["오픈채팅", "협회·조합", "교육기관", "매체", "링크드인", "커뮤니티", "파트너", "메일전달", "기타"];
 
@@ -82,6 +97,7 @@ export default function ChannelManager({ site, channels, daily }: { site: string
   const [editing, setEditing] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const keys = channels.map((c) => c.code);
+  const srt = useSort(channels, COLS, { key: "total", dir: "desc" });
   const isPseudo = (code: string) => code.startsWith("("); // "(직접/미상)" — ref 없이 온 구독자 묶음. 링크·편집 없음
 
   return (
@@ -104,20 +120,20 @@ export default function ChannelManager({ site, channels, daily }: { site: string
           <table className="admin-table compact">
             <thead>
               <tr>
-                <th>채널</th>
-                <th>종류</th>
-                <th className="num">구독자</th>
-                <th className="num">전환율</th>
-                <th className="num">게시 후</th>
-                <th className="num">회사 / 개인</th>
-                <th className="num">24시간 · 7일</th>
-                <th className="num">전환 소요</th>
-                <th className="num">3·4등급</th>
+                {srt.th("name", "채널")}
+                {srt.th("kind", "종류")}
+                {srt.th("total", "구독자", { num: true })}
+                {srt.th("conversion", "전환율", { num: true })}
+                {srt.th("sincePost", "게시 후", { num: true, title: "게시 일시 이후 경과 순" })}
+                {srt.th("company", "회사 / 개인", { num: true, title: "회사 도메인 수 순" })}
+                {srt.th("recent", "24시간 · 7일", { num: true, title: "7일 신규 순" })}
+                {srt.th("convert", "전환 소요", { num: true, title: "중앙값 순" })}
+                {srt.th("highRisk", "3·4등급", { num: true })}
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {channels.map((c) => (
+              {srt.sorted.map((c) => (
                 <Fragment key={c.code}>
                   <tr className={c.total === 0 ? "inactive" : ""}>
                     <td>

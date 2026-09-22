@@ -8,6 +8,8 @@ import AdminTabs from "./AdminTabs";
 import { NO_REF } from "@/lib/admin-data";
 import ChannelManager from "./ChannelManager";
 import SubscriberTable from "./SubscriberTable";
+import UpdatesTable from "./UpdatesTable";
+import DeliveriesTable from "./DeliveriesTable";
 
 export const metadata = { title: "관리자 대시보드 · RegTide", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -88,6 +90,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           ref: s.ref ?? "",
           createdLabel: fmtDay(s.created_at),
           lastSentLabel: fmtDay(s.last_sent_at),
+          createdAt: s.created_at ?? null,
+          lastSentAt: s.last_sent_at ?? null,
           active: s.active,
         }))}
       />
@@ -98,27 +102,25 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <section className="card">
       <h2>최근 수집 항목 (60건)</h2>
       <p className="sub">"무관"은 분류 규칙이 구독자 규격과 관련 없다고 판단한 항목입니다. 관련 있는데 무관으로 빠진 것이 보이면 카탈로그 키워드 보강 대상입니다.</p>
-      <div className="table-wrap">
-        <table className="admin-table">
-          <thead><tr><th>수집</th><th>발표</th><th>관할</th><th>영향도</th><th>제목</th><th>출처</th><th>매칭 규격</th></tr></thead>
-          <tbody>
-            {d.recentUpdates.map((u) => {
-              const si = describeSource(u.source);
-              return (
-                <tr key={u.id} className={u.impact === "none" ? "inactive" : ""}>
-                  <td>{fmtDay(u.created_at)}</td>
-                  <td>{fmtDay(u.published_at)}</td>
-                  <td>{JURISDICTION_LABEL[u.jurisdiction as Jurisdiction]?.split(" ")[0] ?? u.jurisdiction}</td>
-                  <td><span className={`impact ${u.impact ?? "pending"}`}>{u.impact ? IMPACT[u.impact] : "미분류"}</span></td>
-                  <td><a href={u.url ?? "#"} target="_blank" rel="noreferrer">{u.title}</a></td>
-                  <td>{si.name || si.agency}</td>
-                  <td>{u.catalog_ids.map((id) => CATALOG_BY_ID[id]?.label ?? id).join(", ") || "—"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <UpdatesTable
+        rows={d.recentUpdates.map((u) => {
+          const si = describeSource(u.source);
+          return {
+            id: u.id,
+            createdAt: u.created_at ?? null,
+            publishedAt: u.published_at ?? null,
+            createdLabel: fmtDay(u.created_at),
+            publishedLabel: fmtDay(u.published_at),
+            jurisdiction: JURISDICTION_LABEL[u.jurisdiction as Jurisdiction]?.split(" ")[0] ?? u.jurisdiction,
+            impact: u.impact ?? null,
+            impactLabel: u.impact ? IMPACT[u.impact] : "미분류",
+            title: u.title,
+            url: u.url ?? "",
+            sourceLabel: si.name || si.agency,
+            catalogLabel: u.catalog_ids.map((id) => CATALOG_BY_ID[id]?.label ?? id).join(", "),
+          };
+        })}
+      />
     </section>
   );
 
@@ -127,16 +129,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       <h2>이번 주 발송 기록 ({d.weekStart} 주)</h2>
       <p className="sub">sent 성공 · failed 실패(다음 크론에서 자동 재시도) · skipped_empty 해당 항목 없음</p>
       {d.deliveriesThisWeek.length === 0 ? <p className="sub">아직 발송 기록이 없습니다. 월요일 09:00 KST 크론 이후 채워집니다.</p> : (
-        <div className="table-wrap">
-          <table className="admin-table">
-            <thead><tr><th>시각</th><th>이메일</th><th>상태</th><th className="num">항목 수</th><th>오류</th></tr></thead>
-            <tbody>
-              {d.deliveriesThisWeek.map((x, i) => (
-                <tr key={i}><td>{fmt(x.sent_at)}</td><td>{x.email}</td><td><span className={`status ${x.status}`}>{x.status}</span></td><td className="num">{x.update_count}</td><td className="err">{x.error ?? ""}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DeliveriesTable rows={d.deliveriesThisWeek.map((x, i) => ({ key: `${x.sent_at}-${i}`, sentAt: x.sent_at, sentLabel: fmt(x.sent_at), email: x.email, status: x.status, updateCount: x.update_count, error: x.error ?? "" }))} />
       )}
     </section>
   );
@@ -173,6 +166,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         sincePost: hours(c.hoursSincePost),
         within24h: c.within24h == null ? "—" : String(c.within24h),
         within72h: c.within72h == null ? "—" : String(c.within72h),
+        raw: { conversionRate: c.conversionRate, hoursSincePost: c.hoursSincePost, medianConvertMin: c.medianConvertMin, highRiskShare: c.highRiskShare, firstAt: c.firstAt, lastAt: c.lastAt },
       }))}
     />
   );

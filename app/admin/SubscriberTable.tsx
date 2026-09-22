@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import { useSort } from "./useSort";
 
 export interface SubRow {
   id: string;
@@ -10,8 +11,20 @@ export interface SubRow {
   ref: string;
   createdLabel: string;
   lastSentLabel: string;
+  createdAt: string | null; // 정렬용 ISO
+  lastSentAt: string | null;
   active: boolean;
 }
+
+const COLS = {
+  email: (r: SubRow) => r.email,
+  products: (r: SubRow) => r.productsLabel,
+  catalog: (r: SubRow) => r.catalogCount,
+  ref: (r: SubRow) => r.ref,
+  created: (r: SubRow) => r.createdAt,
+  lastSent: (r: SubRow) => r.lastSentAt,
+  active: (r: SubRow) => r.active,
+};
 
 /** 구독자 목록 — 검색은 브라우저에서 즉시 필터링 (서버 재요청 없음) */
 export default function SubscriberTable({ rows }: { rows: SubRow[] }) {
@@ -21,6 +34,7 @@ export default function SubscriberTable({ rows }: { rows: SubRow[] }) {
     if (!k) return rows;
     return rows.filter((r) => r.email.toLowerCase().includes(k) || r.productSearch.includes(k) || r.ref.toLowerCase().includes(k));
   }, [rows, q]);
+  const srt = useSort(filtered, COLS, { key: "created", dir: "desc" });
 
   return (
     <>
@@ -31,9 +45,9 @@ export default function SubscriberTable({ rows }: { rows: SubRow[] }) {
       <p className="sub">{filtered.length}명 표시 · 비활성화하면 발송 대상에서 제외되고, 삭제하면 이메일이 즉시 삭제됩니다(구독해지와 동일).</p>
       <div className="table-wrap">
         <table className="admin-table">
-          <thead><tr><th>이메일</th><th>품목</th><th className="num">규격</th><th>채널</th><th>가입</th><th>마지막 발송</th><th>상태</th><th></th></tr></thead>
+          <thead><tr>{srt.th("email", "이메일")}{srt.th("products", "품목")}{srt.th("catalog", "규격", { num: true })}{srt.th("ref", "채널")}{srt.th("created", "가입")}{srt.th("lastSent", "마지막 발송")}{srt.th("active", "상태")}<th></th></tr></thead>
           <tbody>
-            {filtered.map((s) => (
+            {srt.sorted.map((s) => (
               <tr key={s.id} className={s.active ? "" : "inactive"}>
                 <td>{s.email}</td>
                 <td>{s.productsLabel || "—"}</td>

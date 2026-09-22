@@ -232,3 +232,13 @@ input, select, textarea, button { font-family: inherit; }
 .faq-item:first-child { border-top: 0; padding-top: 4px; }
 .faq dt { font-weight: 600; font-size: 15px; margin: 0 0 6px; color: #101828; }
 .faq dd { margin: 0; color: #475467; font-size: 14px; line-height: 1.7; }
+
+/* 표 정렬 (열 제목 클릭) */
+.admin-table th.sortable { padding: 0; }
+.admin-table th.sortable .sort-btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; padding: 8px 10px; width: 100%; box-sizing: border-box; color: inherit; font: inherit; }
+.admin-table th.num.sortable .sort-btn { justify-content: flex-end; }
+.admin-table th.sortable .sort-btn:hover { color: var(--text); background: #f9fafb; }
+.admin-table th.sortable .sort-ind { font-size: 10px; color: #c0c7d2; }
+.admin-table th.sortable.sorted .sort-btn { color: var(--text); }
+.admin-table th.sortable.sorted .sort-ind { color: #1d4ed8; }
+.admin-search label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
