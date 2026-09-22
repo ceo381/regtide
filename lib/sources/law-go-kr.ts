@@ -26,8 +26,10 @@ export const lawGoKrAdapter: SourceAdapter = {
   key: "law_go_kr",
   label: "국가법령정보센터 (법령·행정규칙)",
   async fetch(since) {
-    const oc = process.env.LAW_GO_KR_OC;
+    // 환경변수에 따옴표·공백이 섞여 들어오는 실수를 흡수
+    const oc = (process.env.LAW_GO_KR_OC ?? "").trim().replace(/^["']+|["']+$/g, "");
     if (!oc) return [];
+    const masked = oc.length <= 4 ? `${oc[0]}***` : `${oc.slice(0, 2)}***${oc.slice(-2)}`;
     const out: RawUpdate[] = [];
     const seen = new Set<string>();
     // "오류 없이 0건" 방지: 질의별 실패를 모아 두고, 정상 응답이 하나도 없으면 예외로 드러낸다
@@ -82,7 +84,7 @@ export const lawGoKrAdapter: SourceAdapter = {
       }
     }
     if (okCount === 0 && failures.length) {
-      throw new Error(`국가법령정보 API 응답 없음 (${failures.length}건 실패). 첫 오류: ${failures[0]}`);
+      throw new Error(`국가법령정보 API 응답 없음 (${failures.length}건 실패, OC=${masked}, 길이 ${oc.length}). 첫 오류: ${failures[0]} — 브라우저에서 https://www.law.go.kr/DRF/lawSearch.do?OC=<OC>&target=law&type=JSON&query=의료기기 를 열어 OC 값을 확인하세요`);
     }
     if (failures.length) console.warn(`[law_go_kr] 일부 질의 실패 ${failures.length}/${failures.length + okCount}:`, failures.slice(0, 3));
     return out;
