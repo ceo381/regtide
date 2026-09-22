@@ -715,6 +715,11 @@ async function main() {
     const dp = `<html><body><p class="page">총 <b>2</b>건</p><table><tbody>${dtr("3422", ["27", "승원산업", "-", "전 제조업무정지 3개월(2026. 9. 2...", "2026-09-02", "2026-09-21"])}${dtr("3400", ["26", "옛날업체", "-", "경고", "2026-08-01", "2026-08-05"])}</tbody></table></body></html>`;
     const ddetail = `<table><tr><th>업체명</th><td>승원산업</td></tr><tr><th>업종명</th><td>제조업</td></tr><tr><th>처분명</th><td>전 제조업무정지 3개월(2026. 9. 21. ~ 2026. 12. 20.)</td></tr><tr><th>처분기간</th><td>2026-09-21 ~ 2026-12-20</td></tr><tr><th>위반내용</th><td>품질책임자 미지정(2차)</td></tr></table>`;
     const dhttp: EmediHttp = { async get(path) { return path.includes("/view/") ? ddetail : ""; }, async post(path, form) { calls.push({ m: "POST", path, form }); return dp; } };
+    // 페이징이 무시되어 같은 페이지가 반복되는 경우(총 건수 없음, 10건 가득) → 무한 진행 없이 중단 + 경고
+    const full = `<html><body><table><tbody>${Array.from({ length: 10 }, (_, i) => dtr(String(100 + i), [String(10 - i), `업체${i}`, "-", "경고", "2026-09-10", "2026-09-21"])).join("")}</tbody></table></body></html>`;
+    const rep = await emediAdapter(DISPS_SPEC, { async get() { return ""; }, async post() { return full; } }).fetch(since);
+    assert.equal(itemsOf(rep).length, 10);
+    assert.ok(!Array.isArray(rep) && rep.warnings?.[0].includes("페이징이 동작하지 않아"), String(!Array.isArray(rep) && rep.warnings));
     const dr = itemsOf(await emediAdapter(DISPS_SPEC, dhttp).fetch(since));
     assert.equal(dr.length, 1, "공개일자 8/5 건은 since 이전");
     assert.equal(dr[0].title, "[행정처분] 전 제조업무정지 3개월(2026. 9. 21. ~ 2026. 12. 20.) — 승원산업");
@@ -722,7 +727,10 @@ async function main() {
     assert.equal(dr[0].url, "https://emedi.mfds.go.kr/disps/view/MNU20266?portalAdmDispsSeq=3422");
     assert.equal(dr[0].publishedAt?.toISOString(), "2026-09-20T15:00:00.000Z", "공개일자 기준");
     assert.ok(dr[0].raw?.includes("위반내용: 품질책임자 미지정(2차)"));
-    const dform = calls.filter((c) => c.path === "/disps/MNU20266")[0].form!;
+    const dposts = calls.filter((c) => c.path === "/disps/MNU20266");
+    const dform = dposts[0].form!;
+    assert.equal(dform.searchYn, "true");
+    assert.equal(dposts.length, 1, "총 2건 < 10 이므로 1페이지에서 끝");
     assert.ok(dform.dispsStartDate < "2026-08-01", "처분일 검색은 since 보다 넉넉히 앞당김 (공개 지연 흡수): " + dform.dispsStartDate);
     // 소스 메타·카탈로그 연결
     assert.equal(describeSource("mfds_emedi:recall").name, "의료기기안심책방 회수/판매중지");
