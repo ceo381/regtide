@@ -256,3 +256,5 @@ input, select, textarea, button { font-family: inherit; }
 .selected-chips .none { color: var(--danger); font-size: 13px; }
 .selected-summary .btn-ghost { white-space: nowrap; }
 @media (max-width: 600px) { .product-fields { grid-template-columns: 1fr; } }
+
+.bar-col .bar-v { font-size: 11px; color: #1d4ed8; margin-top: 2px; }

@@ -25,14 +25,19 @@ export interface ChannelView {
   sincePost: string;
   within24h: string;
   within72h: string;
+  visits: string; // "123" 또는 "—"
+  visitsSub: string; // "24h 3 · 7d 40"
+  visitConversion: string;
   /** 정렬용 원시값 (표시 문자열과 별개) */
-  raw: { conversionRate: number | null; hoursSincePost: number | null; medianConvertMin: number | null; highRiskShare: number; firstAt: string | null; lastAt: string | null };
+  raw: { conversionRate: number | null; hoursSincePost: number | null; medianConvertMin: number | null; highRiskShare: number; firstAt: string | null; lastAt: string | null; visits: number | null; visitConversion: number | null };
 }
 
 const COLS = {
   name: (c: ChannelView) => c.name ?? c.code,
   kind: (c: ChannelView) => c.kind,
   total: (c: ChannelView) => c.total,
+  visits: (c: ChannelView) => c.raw.visits,
+  visitConv: (c: ChannelView) => c.raw.visitConversion,
   conversion: (c: ChannelView) => c.raw.conversionRate,
   sincePost: (c: ChannelView) => c.raw.hoursSincePost,
   company: (c: ChannelView) => c.companyDomains,
@@ -115,7 +120,7 @@ export default function ChannelManager({ site, channels, daily }: { site: string
 
       <section className="card">
         <h2>채널별 추적</h2>
-        <p className="sub">전환율 = 구독자 ÷ 대상 인원 · 게시 후 = 게시 일시 이후 경과, 24h/72h 는 그 시간 안에 들어온 구독자 · 전환 소요 = 링크 접속 → 구독 완료 중앙값, 즉시 = 10분 내 구독 비율.</p>
+        <p className="sub">유입 = 최근 14일 랜딩 방문(브라우저 세션당 1회, 개인 식별 없음) · 방문→구독 = 14일 신규 구독 ÷ 14일 방문 · 대상 전환율 = 구독자 ÷ 대상 인원 · 게시 후 = 게시 일시 이후 경과, 24h/72h 는 그 시간 안에 들어온 구독자 · 전환 소요 = 링크 접속 → 구독 완료 중앙값, 즉시 = 10분 내 구독 비율.</p>
         <div className="table-wrap">
           <table className="admin-table compact">
             <thead>
@@ -123,7 +128,9 @@ export default function ChannelManager({ site, channels, daily }: { site: string
                 {srt.th("name", "채널")}
                 {srt.th("kind", "종류")}
                 {srt.th("total", "구독자", { num: true })}
-                {srt.th("conversion", "전환율", { num: true })}
+                {srt.th("visits", "유입 (14일)", { num: true, title: "최근 14일 랜딩 방문 수 (브라우저 세션당 1회)" })}
+                {srt.th("visitConv", "방문→구독", { num: true, title: "최근 14일 신규 구독 ÷ 최근 14일 방문" })}
+                {srt.th("conversion", "대상 전환율", { num: true, title: "전체 구독자 ÷ 대상 인원" })}
                 {srt.th("sincePost", "게시 후", { num: true, title: "게시 일시 이후 경과 순" })}
                 {srt.th("company", "회사 / 개인", { num: true, title: "회사 도메인 수 순" })}
                 {srt.th("recent", "24시간 · 7일", { num: true, title: "7일 신규 순" })}
@@ -144,6 +151,8 @@ export default function ChannelManager({ site, channels, daily }: { site: string
                     </td>
                     <td>{c.kind ?? "—"}</td>
                     <td className="num"><strong>{c.total}</strong><span className="cell-sub">활성 {c.active}</span></td>
+                    <td className="num">{c.visits}<span className="cell-sub">{c.visitsSub}</span></td>
+                    <td className="num">{c.visitConversion}</td>
                     <td className="num">{c.conversionRate}<span className="cell-sub">{c.audienceSize != null ? `대상 ${c.audienceSize.toLocaleString()}` : "대상 미입력"}</span></td>
                     <td className="num">{c.sincePost}<span className="cell-sub">24h {c.within24h} · 72h {c.within72h}</span></td>
                     <td className="num">{c.companyDomains} / {c.personal}</td>
@@ -161,7 +170,7 @@ export default function ChannelManager({ site, channels, daily }: { site: string
                   </tr>
                   {open === c.code && (
                     <tr>
-                      <td colSpan={10} className="detail">
+                      <td colSpan={12} className="detail">
                         <div className="grid2">
                           <div>
                             <div><strong>안내 링크</strong> <CopyLink url={`${site}/?ref=${c.code}`} /></div>
@@ -182,7 +191,7 @@ export default function ChannelManager({ site, channels, daily }: { site: string
                   )}
                   {editing === c.code && (
                     <tr>
-                      <td colSpan={10} className="detail">
+                      <td colSpan={12} className="detail">
                         <ChannelForm site={site} initial={c.name == null ? { code: c.code } : c} onClose={() => setEditing(null)} />
                       </td>
                     </tr>

@@ -89,3 +89,14 @@ create table if not exists channels (
   updated_at timestamptz not null default now()
 );
 alter table channels enable row level security;
+
+-- 2026-09-22: 유입(방문) 집계 — 랜딩 페이지 접속을 채널(ref)별로 센다. 개인 식별 정보 없음 (IP·쿠키·방문자 ID 저장 안 함)
+create table if not exists visits (
+  id uuid primary key default gen_random_uuid(),
+  ref text,                                  -- 링크의 ?ref= 값. 없으면 null (직접/미상)
+  referrer text,                             -- 이전 페이지 호스트만 (예: open.kakao.com)
+  landed_at timestamptz not null default now()
+);
+create index if not exists visits_landed_idx on visits(landed_at desc);
+create index if not exists visits_ref_idx on visits(ref);
+alter table visits enable row level security;

@@ -504,6 +504,33 @@ async function main() {
     assert.equal(bad.headers.get("location"), "https://regtide.example/?unsub=invalid");
   });
 
+  await ok("유입 집계: /api/visit 가 ref·referrer 만 저장(IP 없음)하고, 채널 통계에 방문 수·방문→구독 전환율이 붙는다", async () => {
+    const { POST } = await import("@/app/api/visit/route");
+    const hit = async (body: unknown) => {
+      const req = new Request("http://localhost/api/visit", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "x-forwarded-for": "10.0.0.9" } });
+      return (await POST(req as never)).json();
+    };
+    await hit({ ref: "OpenChat1", referrer: "open.kakao.com" });
+    await hit({ ref: "openchat1", referrer: "open.kakao.com" });
+    await hit({ ref: "", referrer: "" });
+    await hit({ ref: "<script>", referrer: "x" });
+    const vs = db.tables.visits;
+    assert.equal(vs.length, 4);
+    assert.deepEqual(vs.map((v) => v.ref), ["openchat1", "openchat1", null, "script"], "ref 는 소문자·허용 문자만");
+    for (const v of vs) assert.ok(!("ip" in v) && !("consent_ip" in v), "IP 저장 안 함");
+    assert.equal(vs[0].referrer, "open.kakao.com");
+    const { computeChannels } = await import("@/lib/admin-data");
+    const subs = db.tables.subscribers.map((r, i) => ({ ...r, created_at: new Date().toISOString(), ref: i === 0 ? "openchat1" : r.ref }));
+    const { channels } = computeChannels(subs as never, new Date(), [], vs as never);
+    const oc = channels.find((c) => c.ref === "openchat1")!;
+    assert.equal(oc.visits, 2);
+    assert.ok(oc.visitConversion != null && oc.visitConversion > 0, "방문→구독 전환율 계산");
+    const scr = channels.find((c) => c.ref === "script")!;
+    assert.equal(scr.total, 0, "방문만 있고 구독자 없는 채널도 표시");
+    assert.equal(scr.visits, 1);
+    const { channels: noVisits } = computeChannels(subs as never, new Date(), [], null);
+    assert.equal(noVisits[0].visits, null, "visits 테이블이 없으면 null (집계 전 표시)");
+  });
   await ok("대시보드 표 정렬: 숫자·문자·날짜 정렬, 빈 값은 항상 맨 뒤, 동률은 원래 순서", async () => {
     const { sortRows } = await import("@/app/admin/useSort");
     const rows = [{ n: 2, s: "나", d: "2026-09-02" }, { n: null, s: "", d: null }, { n: 10, s: "가", d: "2026-09-10" }, { n: 2, s: "다", d: "2026-09-01" }];

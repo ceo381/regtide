@@ -42,6 +42,15 @@ export default function SubscribeForm() {
     try {
       const url = new URL(window.location.href);
       const fromUrl = (url.searchParams.get("ref") ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40);
+      // 유입 집계: 브라우저 세션당 1회만 서버에 기록 (개인 식별값 없음). 실패해도 무시
+      try {
+        if (!sessionStorage.getItem("regtide_visited")) {
+          sessionStorage.setItem("regtide_visited", "1");
+          let refHost = "";
+          try { refHost = document.referrer ? new URL(document.referrer).host : ""; } catch { /* ignore */ }
+          fetch("/api/visit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref: fromUrl, referrer: refHost }), keepalive: true }).catch(() => {});
+        }
+      } catch { /* sessionStorage 불가 환경 */ }
       const stored = JSON.parse(localStorage.getItem("regtide_ref") ?? "null") as { ref: string; landedAt: string; referrer: string } | null;
       if (stored?.ref) { setChannel(stored); return; }
       if (fromUrl) {
@@ -237,7 +246,7 @@ export default function SubscribeForm() {
             <ul>
               <li>수집 항목(필수): 이메일 주소, 품목 등급·유형, 선택한 규격·인증, 동의 일시 및 IP</li>
               <li>수집 항목(선택): 품목명 — 입력하지 않아도 서비스를 이용할 수 있으며, 입력 시 리포트에 표시됩니다</li>
-              <li>자동 수집: 서비스 안내 링크(?ref=)로 접속한 경우 유입 경로 코드·최초 접속 시각 (채널별 효과 측정 통계 목적)</li>
+              <li>자동 수집: 서비스 안내 링크(?ref=)로 접속한 경우 유입 경로 코드·최초 접속 시각, 접속 통계(방문 시각·유입 경로 코드·이전 페이지 호스트 — IP·쿠키·방문자 식별값 없음) (채널별 효과 측정 통계 목적)</li>
               <li>수집 목적: 구독 신청 확인 메일 발송(1회), 규제 업데이트 주간 리포트 이메일 발송, 구독해지 처리</li>
               <li>보유 기간: 구독해지(구독 해지) 시까지. 해지 즉시 삭제됩니다.</li>
               <li>제3자 제공: 없음. 단, 이메일 발송을 위해 발송 대행 서비스(Resend)에 처리를 위탁합니다.</li>

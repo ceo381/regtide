@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { notifyMilestoneIfReached, sendDailyAdminReport } from "@/lib/admin-report";
 import { COLLECT_LOOKBACK_DAYS, collectUpdates } from "@/lib/collect";
 import { classifyAll } from "@/lib/classify";
+import { supabaseAdmin } from "@/lib/supabase";
+
+/** 접속 통계(visits) 보유 기간 — 개인정보처리방침 2항과 일치시킬 것 */
+const VISITS_RETENTION_DAYS = 180;
 
 export const runtime = "nodejs";
 export const maxDuration = 300; // Vercel Hobby(Fluid) 최대. 수집은 어댑터당 40초 상한이 별도로 있음
@@ -40,6 +44,14 @@ export async function GET(req: NextRequest) {
       }
     }
     out.milestone = await notifyMilestoneIfReached();
+    // 접속 통계 보유 기간 초과분 삭제 (테이블이 없거나 실패해도 리포트는 진행)
+    try {
+      const cutoff = new Date(now.getTime() - VISITS_RETENTION_DAYS * 86400_000).toISOString();
+      const { error } = await supabaseAdmin().from("visits").delete().lt("landed_at", cutoff);
+      out.visitsPurge = error ? `skipped: ${error.message}` : `ok (<${cutoff.slice(0, 10)})`;
+    } catch (e) {
+      out.visitsPurge = `skipped: ${String((e as Error).message ?? e)}`;
+    }
     out.daily = await sendDailyAdminReport(now);
     return NextResponse.json(out);
   } catch (e) {

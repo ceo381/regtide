@@ -14,7 +14,11 @@ export interface DashboardData {
   health: HealthReport;
   channels: ChannelStat[];
   channelDaily: { day: string; counts: Record<string, number> }[]; // 최근 14일 채널별 신규
+  visits: { total: number; last24h: number; last7d: number; last14d: number; available: boolean }; // 유입(방문). visits 테이블 없으면 available=false
+  visitsByDay: { day: string; count: number }[]; // 최근 14일, KST
 }
+
+export interface VisitRow { ref: string | null; referrer: string | null; landed_at: string }
 
 export interface ChannelStat {
   ref: string; // "(직접/미상)" 포함
@@ -41,14 +45,29 @@ export interface ChannelStat {
   /** 게시 후 24시간 / 72시간 내 구독 수 (posted_at 기준) */
   within24h: number | null;
   within72h: number | null;
+  /** 유입(방문) 수 — visits 테이블. null 이면 집계 불가(테이블 없음) */
+  visits: number | null;
+  visits24h: number | null;
+  visits7d: number | null;
+  /** 방문 → 구독 전환율 (최근 14일 신규 구독자 ÷ 최근 14일 방문) */
+  visitConversion: number | null;
 }
 
 const PERSONAL = new Set(["naver.com", "gmail.com", "daum.net", "hanmail.net", "nate.com", "kakao.com", "hotmail.com", "outlook.com", "yahoo.com", "icloud.com", "live.com", "me.com"]);
 export const NO_REF = "(직접/미상)";
 
-export function computeChannels(subs: DashboardData["subscribers"], now = new Date(), registry: ChannelRow[] = []): { channels: ChannelStat[]; channelDaily: DashboardData["channelDaily"] } {
+export function computeChannels(subs: DashboardData["subscribers"], now = new Date(), registry: ChannelRow[] = [], visits: VisitRow[] | null = null): { channels: ChannelStat[]; channelDaily: DashboardData["channelDaily"] } {
   const reg = new Map(registry.map((r) => [r.code, r]));
   const groups = new Map<string, DashboardData["subscribers"]>();
+  // 방문을 채널별로 묶기 (ref 없음 → NO_REF)
+  const visitGroups = new Map<string, VisitRow[]>();
+  for (const v of visits ?? []) {
+    const k = (v.ref && v.ref.trim()) || NO_REF;
+    if (!visitGroups.has(k)) visitGroups.set(k, []);
+    visitGroups.get(k)!.push(v);
+  }
+  // 방문만 있고 구독자는 없는 채널도 표에 나오게
+  for (const k of visitGroups.keys()) if (!groups.has(k)) groups.set(k, []);
   for (const s of subs) {
     const k = (s.ref && s.ref.trim()) || NO_REF;
     if (!groups.has(k)) groups.set(k, []);
@@ -56,6 +75,7 @@ export function computeChannels(subs: DashboardData["subscribers"], now = new Da
   }
   const h24 = now.getTime() - 24 * 3600_000;
   const d7 = now.getTime() - 7 * 86400_000;
+  const d14 = now.getTime() - 14 * 86400_000;
   const median = (xs: number[]) => { if (!xs.length) return null; const a = [...xs].sort((x, y) => x - y); const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
 
   // 등록만 되고 아직 구독자가 없는 채널도 0명으로 표시
@@ -82,7 +102,13 @@ export function computeChannels(subs: DashboardData["subscribers"], now = new Da
     const r = reg.get(ref) ?? null;
     const postedMs = r?.posted_at ? ms(r.posted_at) : NaN;
     const within = (h: number) => (Number.isFinite(postedMs) ? list.filter((s) => { const t = ms(s.created_at); return t >= postedMs && t <= postedMs + h * 3600_000; }).length : null);
+    const vs = visits ? visitGroups.get(ref) ?? [] : null;
     return {
+      visits: vs ? vs.length : null,
+      visits24h: vs ? vs.filter((v) => ms(v.landed_at) >= h24).length : null,
+      visits7d: vs ? vs.filter((v) => ms(v.landed_at) >= d7).length : null,
+      // 방문은 최근 14일 행만 있으므로 전환율도 같은 기간의 신규 구독자로 계산
+      visitConversion: vs && vs.length ? list.filter((s) => ms(s.created_at) >= d14).length / vs.length : null,
       registry: r,
       conversionRate: r?.audience_size ? list.length / r.audience_size : null,
       hoursSincePost: Number.isFinite(postedMs) ? (now.getTime() - postedMs) / 3600_000 : null,
@@ -124,12 +150,18 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
   const weekStart = monday.toISOString().slice(0, 10);
 
   // 통계·구독자·수집항목·발송기록을 한 번에 병렬 조회
-  const [stats, subsQ, upsQ, delsQ, registry] = await Promise.all([
+  const since14 = new Date(now.getTime() - 14 * 86400_000).toISOString();
+  const [stats, subsQ, upsQ, delsQ, registry, visitsQ] = await Promise.all([
     collectAdminStats(now),
     selectAll<DashboardData["subscribers"][number]>(() => sb.from("subscribers").select("*").order("created_at", { ascending: false }).order("id", { ascending: true })).then((data) => ({ data, error: null as null })),
     sb.from("updates").select("*").order("created_at", { ascending: false }).limit(60),
     sb.from("deliveries").select("subscriber_id, status, sent_at, error, update_ids").eq("week_start", weekStart).order("sent_at", { ascending: false }),
     listChannels().catch(() => [] as ChannelRow[]), // channels 테이블이 아직 없으면 빈 목록
+    // 유입(방문): 전체 건수는 count 로, 일별·채널별 계산은 최근 14일 행으로. 테이블이 없으면(마이그레이션 전) null
+    Promise.all([
+      sb.from("visits").select("id", { count: "exact", head: true }),
+      selectAll<VisitRow>(() => sb.from("visits").select("ref, referrer, landed_at").gte("landed_at", since14).order("landed_at", { ascending: false }).order("id", { ascending: true })),
+    ]).then(([c, rows]) => (c.error ? null : { total: c.count ?? 0, rows })).catch(() => null),
   ]);
   if (subsQ.error) throw subsQ.error;
   if (upsQ.error) throw upsQ.error;
@@ -156,8 +188,16 @@ export async function loadDashboard(now = new Date()): Promise<DashboardData> {
     if (d in days) days[d]++;
   }
 
-  const { channels, channelDaily } = computeChannels(subs as DashboardData["subscribers"], now, registry);
+  // 채널별 방문은 전체 기간이 아니라 최근 14일 행 기준 (전체 기간 채널별 집계는 행 수가 커지면 별도 집계 필요)
+  const visitRows = visitsQ?.rows ?? null;
+  const { channels, channelDaily } = computeChannels(subs as DashboardData["subscribers"], now, registry, visitRows);
+  const vDays: Record<string, number> = {};
+  for (const d of Object.keys(days)) vDays[d] = 0;
+  for (const v of visitRows ?? []) { const d = kstDay(v.landed_at); if (d in vDays) vDays[d]++; }
+  const vin = (h: number) => (visitRows ?? []).filter((v) => ms(v.landed_at) >= now.getTime() - h * 3600_000).length;
   return {
+    visits: { available: !!visitsQ, total: visitsQ?.total ?? 0, last24h: vin(24), last7d: vin(24 * 7), last14d: visitRows?.length ?? 0 },
+    visitsByDay: Object.entries(vDays).map(([day, count]) => ({ day, count })),
     stats,
     channels,
     channelDaily,

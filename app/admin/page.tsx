@@ -36,13 +36,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const overview = (
     <>
       <section className="card">
-        <h2>최근 14일 신규 구독</h2>
-        <div className="bars" role="img" aria-label="일별 신규 구독자 수">
-          {d.signupsByDay.map((x) => (
-            <div key={x.day} className="bar-col" title={`${x.day}: ${x.count}명`}>
+        <h2>최근 14일 신규 구독 · 유입</h2>
+        <p className="sub">막대 = 신규 구독자, 아래 숫자 = 그날 유입(방문)</p>
+        <div className="bars" role="img" aria-label="일별 신규 구독자 수와 유입 수">
+          {d.signupsByDay.map((x, i) => (
+            <div key={x.day} className="bar-col" title={`${x.day}: 구독 ${x.count}명 · 유입 ${d.visitsByDay[i]?.count ?? 0}`}>
               <div className="bar" style={{ height: `${Math.round((x.count / maxDay) * 100)}%` }} />
               <span className="bar-n">{x.count || ""}</span>
               <span className="bar-d">{x.day.slice(5)}</span>
+              <span className="bar-v">{d.visits.available ? (d.visitsByDay[i]?.count || "·") : ""}</span>
             </div>
           ))}
         </div>
@@ -166,7 +168,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         sincePost: hours(c.hoursSincePost),
         within24h: c.within24h == null ? "—" : String(c.within24h),
         within72h: c.within72h == null ? "—" : String(c.within72h),
-        raw: { conversionRate: c.conversionRate, hoursSincePost: c.hoursSincePost, medianConvertMin: c.medianConvertMin, highRiskShare: c.highRiskShare, firstAt: c.firstAt, lastAt: c.lastAt },
+        visits: c.visits == null ? "—" : String(c.visits),
+        visitsSub: c.visits == null ? "집계 전" : `24h ${c.visits24h} · 7d ${c.visits7d}`,
+        visitConversion: pct(c.visitConversion),
+        raw: { conversionRate: c.conversionRate, hoursSincePost: c.hoursSincePost, medianConvertMin: c.medianConvertMin, highRiskShare: c.highRiskShare, firstAt: c.firstAt, lastAt: c.lastAt, visits: c.visits, visitConversion: c.visitConversion },
       }))}
     />
   );
@@ -228,6 +233,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       <section className="admin-kpis">
         <div className="kpi"><span>활성 구독자</span><strong>{stats.totalActive}</strong><small>다음 마일스톤 {nextMilestone}명</small></div>
         <div className="kpi"><span>24시간 신규</span><strong>{stats.newSubscribers.length}</strong><small>최근 14일 합계 {d.signupsByDay.reduce((a, b) => a + b.count, 0)}</small></div>
+        <div className="kpi"><span>유입 (24시간)</span><strong>{d.visits.available ? d.visits.last24h : "—"}</strong><small>{d.visits.available ? `7일 ${d.visits.last7d} · 14일 ${d.visits.last14d} · 누적 ${d.visits.total}` : "visits 테이블 마이그레이션 필요"}</small></div>
         <div className="kpi"><span>회사 도메인</span><strong>{stats.companyDomains}</strong><small>개인 메일 {stats.personalMailCount}명</small></div>
         <div className="kpi"><span>같은 회사 2명+</span><strong>{stats.multiSeatDomains.length}</strong><small>{stats.multiSeatDomains.length ? stats.multiSeatDomains.slice(0, 3).map((x) => `${x.domain} ${x.count}`).join(" · ") : "조직 확산 지표"}</small></div>
         <div className="kpi"><span>이번 주 발송 ({d.weekStart})</span><strong>{delCount("sent")}</strong><small>실패 {delCount("failed")} · 해당없음 {delCount("skipped_empty")}</small></div>
