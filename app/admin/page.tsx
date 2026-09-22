@@ -129,7 +129,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       {d.deliveriesThisWeek.length === 0 ? <p className="sub">아직 발송 기록이 없습니다. 월요일 09:00 KST 크론 이후 채워집니다.</p> : (
         <div className="table-wrap">
           <table className="admin-table">
-            <thead><tr><th>시각</th><th>이메일</th><th>상태</th><th>항목 수</th><th>오류</th></tr></thead>
+            <thead><tr><th>시각</th><th>이메일</th><th>상태</th><th className="num">항목 수</th><th>오류</th></tr></thead>
             <tbody>
               {d.deliveriesThisWeek.map((x, i) => (
                 <tr key={i}><td>{fmt(x.sent_at)}</td><td>{x.email}</td><td><span className={`status ${x.status}`}>{x.status}</span></td><td className="num">{x.update_count}</td><td className="err">{x.error ?? ""}</td></tr>

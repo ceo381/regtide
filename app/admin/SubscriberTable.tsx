@@ -31,7 +31,7 @@ export default function SubscriberTable({ rows }: { rows: SubRow[] }) {
       <p className="sub">{filtered.length}명 표시 · 비활성화하면 발송 대상에서 제외되고, 삭제하면 이메일이 즉시 삭제됩니다(구독해지와 동일).</p>
       <div className="table-wrap">
         <table className="admin-table">
-          <thead><tr><th>이메일</th><th>품목</th><th>규격</th><th>채널</th><th>가입</th><th>마지막 발송</th><th>상태</th><th></th></tr></thead>
+          <thead><tr><th>이메일</th><th>품목</th><th className="num">규격</th><th>채널</th><th>가입</th><th>마지막 발송</th><th>상태</th><th></th></tr></thead>
           <tbody>
             {filtered.map((s) => (
               <tr key={s.id} className={s.active ? "" : "inactive"}>

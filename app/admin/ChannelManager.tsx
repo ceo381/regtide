@@ -99,31 +99,41 @@ export default function ChannelManager({ site, channels, daily }: { site: string
 
       <section className="card">
         <h2>채널별 추적</h2>
-        <p className="sub">전환율 = 구독자 ÷ 대상 인원. 전환 소요 = 링크 접속 → 구독 완료 중앙값. 즉시 전환 = 접속 10분 내 구독 비율. 24h/72h = 게시 후 그 시간 안에 들어온 구독자.</p>
+        <p className="sub">전환율 = 구독자 ÷ 대상 인원 · 게시 후 = 게시 일시 이후 경과, 24h/72h 는 그 시간 안에 들어온 구독자 · 전환 소요 = 링크 접속 → 구독 완료 중앙값, 즉시 = 10분 내 구독 비율.</p>
         <div className="table-wrap">
-          <table className="admin-table">
-            <thead><tr><th>채널</th><th>종류</th><th>구독자</th><th>활성</th><th>전환율</th><th>게시 후</th><th>24h / 72h</th><th>회사/개인</th><th>24시간 · 7일</th><th>전환 소요</th><th>즉시</th><th>3·4등급</th><th></th></tr></thead>
+          <table className="admin-table compact">
+            <thead>
+              <tr>
+                <th>채널</th>
+                <th>종류</th>
+                <th className="num">구독자</th>
+                <th className="num">전환율</th>
+                <th className="num">게시 후</th>
+                <th className="num">회사 / 개인</th>
+                <th className="num">24시간 · 7일</th>
+                <th className="num">전환 소요</th>
+                <th className="num">3·4등급</th>
+                <th></th>
+              </tr>
+            </thead>
             <tbody>
               {channels.map((c) => (
                 <Fragment key={c.code}>
                   <tr className={c.total === 0 ? "inactive" : ""}>
                     <td>
                       <strong>{c.name ?? c.code}</strong>
-                      <div className="sub" style={{ margin: 0, fontSize: 12 }}>
-                        {isPseudo(c.code) ? <span>ref 없이 접속</span> : <><code>{c.code}</code>{c.name == null && <span className="tag-warn"> 미등록</span>}</>}
-                      </div>
+                      <span className="cell-sub">
+                        {isPseudo(c.code) ? "ref 없이 접속" : <><code>{c.code}</code>{c.name == null && <span className="tag-warn"> 미등록</span>}</>}
+                      </span>
                     </td>
                     <td>{c.kind ?? "—"}</td>
-                    <td className="num"><strong>{c.total}</strong></td>
-                    <td className="num">{c.active}</td>
-                    <td className="num">{c.conversionRate}</td>
-                    <td>{c.sincePost}</td>
-                    <td className="num">{c.within24h} / {c.within72h}</td>
+                    <td className="num"><strong>{c.total}</strong><span className="cell-sub">활성 {c.active}</span></td>
+                    <td className="num">{c.conversionRate}<span className="cell-sub">{c.audienceSize != null ? `대상 ${c.audienceSize.toLocaleString()}` : "대상 미입력"}</span></td>
+                    <td className="num">{c.sincePost}<span className="cell-sub">24h {c.within24h} · 72h {c.within72h}</span></td>
                     <td className="num">{c.companyDomains} / {c.personal}</td>
                     <td className="num">{c.last24h} · {c.last7d}</td>
-                    <td>{c.convertMedian}</td>
-                    <td className="num">{c.quickRate}</td>
-                    <td className="num">{c.highRiskShare}</td>
+                    <td className="num">{c.convertMedian}<span className="cell-sub">즉시 {c.quickRate}</span></td>
+                    <td className="num">{c.highRiskShare}<span className="cell-sub">품목/인 {c.productsPerSub}</span></td>
                     <td className="actions">
                       {!isPseudo(c.code) && (
                         <>
@@ -135,7 +145,7 @@ export default function ChannelManager({ site, channels, daily }: { site: string
                   </tr>
                   {open === c.code && (
                     <tr>
-                      <td colSpan={13} className="detail">
+                      <td colSpan={10} className="detail">
                         <div className="grid2">
                           <div>
                             <div><strong>안내 링크</strong> <CopyLink url={`${site}/?ref=${c.code}`} /></div>
@@ -156,7 +166,7 @@ export default function ChannelManager({ site, channels, daily }: { site: string
                   )}
                   {editing === c.code && (
                     <tr>
-                      <td colSpan={13} className="detail">
+                      <td colSpan={10} className="detail">
                         <ChannelForm site={site} initial={c.name == null ? { code: c.code } : c} onClose={() => setEditing(null)} />
                       </td>
                     </tr>
@@ -171,8 +181,8 @@ export default function ChannelManager({ site, channels, daily }: { site: string
       <section className="card">
         <h2>최근 14일 채널별 신규 구독 (일별)</h2>
         <div className="table-wrap">
-          <table className="admin-table">
-            <thead><tr><th>날짜</th>{keys.map((k) => <th key={k} className="num" title={k}>{channels.find((c) => c.code === k)?.name ?? k}</th>)}<th className="num">합계</th></tr></thead>
+          <table className="admin-table compact">
+            <thead><tr><th>날짜</th>{keys.map((k) => { const n = channels.find((c) => c.code === k)?.name ?? k; return <th key={k} className="num" title={n}>{n.length > 14 ? `${n.slice(0, 14)}…` : n}<span className="cell-sub" style={{ fontWeight: 400 }}>{isPseudo(k) ? "" : k}</span></th>; })}<th className="num">합계</th></tr></thead>
             <tbody>
               {daily.map((row) => {
                 const sum = keys.reduce((a, k) => a + (row.counts[k] || 0), 0);

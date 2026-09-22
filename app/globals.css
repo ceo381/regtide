@@ -215,3 +215,11 @@ footer a { color: var(--muted); }
 .admin-table td.detail .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
 .tag-warn { color: #b54708; font-weight: 600; }
 @media (max-width: 800px) { .channel-form .grid2, .admin-table td.detail .grid2 { grid-template-columns: 1fr; } }
+
+/* 표 정렬 보정: 숫자 열은 헤더도 오른쪽 정렬, 셀은 세로 가운데 */
+.admin-table th.num { text-align: right; }
+.admin-table td { vertical-align: middle; }
+.admin-table.compact td, .admin-table.compact th { white-space: nowrap; }
+.admin-table.compact td:first-child { white-space: normal; min-width: 180px; }
+.admin-table td .sub { display: block; }
+.admin-table .cell-sub { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
