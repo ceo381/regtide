@@ -1,5 +1,6 @@
 import { ROADMAP_HEADLINE, ROADMAP_SUB, VOTE_TITLE } from "@/lib/roadmap";
 import { recentlyReleased, type VoteSummary } from "@/lib/votes";
+import { voteUrl as voteUrlFor } from "@/lib/vote-token";
 /**
  * 구독자에게 나가는 모든 메일(주간 리포트·구독 확인)이 공유하는 조각.
  * 면책 고지는 여기 한 곳에만 두어, 어떤 메일이든 같은 문구·같은 구독해지 안내가 실리도록 한다.
@@ -56,14 +57,14 @@ export function forwardedNoticeHtml() {
  *  - 열린 라운드가 있으면 "다음 기능 투표 중" 링크
  *  - 요약이 없으면(상태 점검 렌더링·마이그레이션 전) 티저 문구만
  */
-export function roadmapBlockHtml(now = new Date(), summary?: VoteSummary) {
+export function roadmapBlockHtml(now = new Date(), summary?: VoteSummary, subscriberId?: string) {
   const released = summary ? recentlyReleased(summary, now) : [];
   const open = summary?.open ?? null;
-  const voteUrl = `${siteUrl()}/#vote`;
+  const voteUrl = subscriberId && subscriberId !== "test" && subscriberId !== "health" ? voteUrlFor(siteUrl(), subscriberId) : `${siteUrl()}/#roadmap`;
   const lines: string[] = [];
   if (released.length) lines.push(`<p style="margin:0 0 6px;color:#101828;font-size:14px;font-weight:600">여러분이 뽑은 기능이 열렸습니다</p><ul style="margin:0 0 8px;padding-left:18px;color:#344054;font-size:13px;line-height:1.6">${released.map((o) => `<li><strong>${esc(o.label)}</strong>${o.description ? ` <span style="color:#667085">— ${esc(o.description)}</span>` : ""}</li>`).join("")}</ul>`);
   else lines.push(`<p style="margin:0 0 6px;color:#101828;font-size:14px;font-weight:600">${esc(ROADMAP_HEADLINE)}</p><p style="margin:0 0 8px;color:#475467;font-size:13px;line-height:1.6">${esc(ROADMAP_SUB)}</p>`);
-  if (open) lines.push(`<p style="margin:0;color:#344054;font-size:13px;line-height:1.6">${esc(VOTE_TITLE)} — <a href="${esc(voteUrl)}" style="color:#175cd3;font-weight:600">다음 기능 투표하기</a> (익명, 30초)</p>`);
+  if (open) lines.push(`<p style="margin:0;color:#344054;font-size:13px;line-height:1.6">${esc(VOTE_TITLE)} — <a href="${esc(voteUrl)}" style="color:#175cd3;font-weight:600">다음 기능 투표하기</a> (구독자 전용 링크, 30초)</p>`);
   return `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 0"><tr><td style="padding:14px 16px;border:1px solid #eaecf0;border-radius:8px;background:#fcfcfd">${lines.join("")}</td></tr></table>`;
 }
 

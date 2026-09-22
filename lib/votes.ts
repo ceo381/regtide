@@ -6,13 +6,13 @@ import { selectAll, supabaseAdmin } from "@/lib/supabase";
  */
 export interface VoteRound { id: string; title: string; status: "open" | "closed"; show_results: boolean; release_note: string | null; opened_at: string; closed_at: string | null }
 export interface VoteOption { id: string; round_id: string; label: string; description: string | null; sort: number; released_at: string | null }
-export interface SuggestionRow { id: string; round_id: string | null; message: string; ref: string | null; created_at: string }
+export interface SuggestionRow { id: string; round_id: string | null; message: string; ref: string | null; subscriber_id?: string | null; created_at: string }
 
 export interface VoteSummary {
-  open: (VoteRound & { options: (VoteOption & { count: number })[]; total: number }) | null;
+  open: (VoteRound & { options: (VoteOption & { count: number })[]; total: number; participants: number }) | null;
   /** 출시 표시된 후보 (최근 순) — 랜딩 "출시된 기능" 이력, 메일 "여러분이 뽑은 기능이 열렸습니다" */
   released: (VoteOption & { round_title: string })[];
-  closedRounds: (VoteRound & { options: (VoteOption & { count: number })[]; total: number })[];
+  closedRounds: (VoteRound & { options: (VoteOption & { count: number })[]; total: number; participants: number })[];
 }
 
 const EMPTY: VoteSummary = { open: null, released: [], closedRounds: [] };
@@ -24,14 +24,15 @@ export async function loadVoteSummary(): Promise<VoteSummary> {
     const [rounds, options, votes] = await Promise.all([
       selectAll<VoteRound>(() => sb.from("vote_rounds").select("*").order("opened_at", { ascending: false }).order("id", { ascending: true })),
       selectAll<VoteOption>(() => sb.from("vote_options").select("*").order("sort", { ascending: true }).order("id", { ascending: true })),
-      selectAll<{ option_id: string; round_id: string }>(() => sb.from("votes").select("option_id, round_id").order("created_at", { ascending: true }).order("id", { ascending: true })),
+      selectAll<{ option_id: string; round_id: string; subscriber_id: string | null }>(() => sb.from("votes").select("option_id, round_id, subscriber_id").order("created_at", { ascending: true }).order("id", { ascending: true })),
     ]);
     const countBy = new Map<string, number>();
     for (const v of votes) countBy.set(v.option_id, (countBy.get(v.option_id) ?? 0) + 1);
     options.sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id));
     const withCounts = (r: VoteRound) => {
       const opts = options.filter((o) => o.round_id === r.id).map((o) => ({ ...o, count: countBy.get(o.id) ?? 0 }));
-      return { ...r, options: opts, total: opts.reduce((a, o) => a + o.count, 0) };
+      const participants = new Set(votes.filter((v) => v.round_id === r.id).map((v) => v.subscriber_id ?? v.option_id + "?")).size;
+      return { ...r, options: opts, total: opts.reduce((a, o) => a + o.count, 0), participants };
     };
     const openRound = rounds.find((r) => r.status === "open") ?? null;
     const closedRounds = rounds.filter((r) => r.status === "closed").map(withCounts);
@@ -52,13 +53,22 @@ export function recentlyReleased(s: VoteSummary, now = new Date(), days = 21) {
   return s.released.filter((o) => o.released_at && new Date(o.released_at).getTime() >= since);
 }
 
-export interface CastInput { roundId: string; optionIds: string[]; other?: string; ref?: string }
+export interface CastInput { roundId: string; optionIds: string[]; other?: string; ref?: string; subscriberId: string }
 
-/** 투표 저장. 열린 라운드의 후보만 인정. 기타 입력은 suggestions 로 */
+/** 이 구독자가 라운드에서 이미 고른 후보 id (없으면 빈 배열) */
+export async function myVotes(roundId: string, subscriberId: string): Promise<string[]> {
+  const { data } = await supabaseAdmin().from("votes").select("option_id").eq("round_id", roundId).eq("subscriber_id", subscriberId);
+  return ((data ?? []) as { option_id: string }[]).map((v) => v.option_id);
+}
+
+/** 투표 저장 — 활성 구독자 전용, 라운드당 1회. 열린 라운드의 후보만 인정. 기타 입력은 suggestions 로 */
 export async function castVote(input: CastInput): Promise<{ ok: true; voted: number; suggested: boolean } | { ok: false; error: string }> {
   const sb = supabaseAdmin();
+  const { data: subscriber } = await sb.from("subscribers").select("id, active").eq("id", input.subscriberId).maybeSingle();
+  if (!subscriber || !(subscriber as { active: boolean }).active) return { ok: false, error: "구독자만 투표할 수 있습니다. 구독 후 확인 메일의 링크로 참여해 주세요." };
   const { data: round } = await sb.from("vote_rounds").select("id, status").eq("id", input.roundId).maybeSingle();
   if (!round || (round as { status: string }).status !== "open") return { ok: false, error: "진행 중인 투표가 아닙니다." };
+  if ((await myVotes(input.roundId, input.subscriberId)).length) return { ok: false, error: "이미 이 라운드에 참여하셨습니다." };
   const { data: opts } = await sb.from("vote_options").select("id").eq("round_id", input.roundId);
   const valid = new Set(((opts ?? []) as { id: string }[]).map((o) => o.id));
   const chosen = [...new Set(input.optionIds)].filter((id) => valid.has(id)).slice(0, 8);
@@ -66,11 +76,11 @@ export async function castVote(input: CastInput): Promise<{ ok: true; voted: num
   if (chosen.length === 0 && !other) return { ok: false, error: "후보를 고르거나 의견을 적어 주세요." };
   const ref = input.ref?.trim() || null;
   if (chosen.length) {
-    const { error } = await sb.from("votes").insert(chosen.map((option_id) => ({ round_id: input.roundId, option_id, ref, created_at: new Date().toISOString() })));
+    const { error } = await sb.from("votes").insert(chosen.map((option_id) => ({ round_id: input.roundId, option_id, ref, subscriber_id: input.subscriberId, created_at: new Date().toISOString() })));
     if (error) return { ok: false, error: "저장 중 오류가 발생했습니다." };
   }
   if (other) {
-    const { error } = await sb.from("suggestions").insert({ round_id: input.roundId, message: other, ref, created_at: new Date().toISOString() });
+    const { error } = await sb.from("suggestions").insert({ round_id: input.roundId, message: other, ref, subscriber_id: input.subscriberId, created_at: new Date().toISOString() });
     if (error) return { ok: false, error: "저장 중 오류가 발생했습니다." };
   }
   return { ok: true, voted: chosen.length, suggested: !!other };

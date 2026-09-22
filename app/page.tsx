@@ -56,7 +56,7 @@ export default function Home() {
         </p>
         <p className="hero-note">
           매주 월요일, 인허가·품질 담당자의 일이 하나씩 줄어듭니다. 지금 필요한 기능이 없더라도 이메일만 등록해 두시면 새 기능이 열릴 때 주간 리포트로 가장 먼저 안내받습니다.{" "}
-          <a href="#vote">다음 기능 투표하기</a>
+          <a href="#roadmap">다음 기능 투표 진행 중</a>
         </p>
         <div className="coverage" aria-label="지원 국가">
           {COVERAGE.map((c) => (

@@ -128,7 +128,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       <p style="margin:0 0 16px;color:#667085;font-size:12px;line-height:1.6">모니터링 대상: ${COVERAGE.map((c) => `<strong style="color:#475467">${esc(c.country)}</strong>(${esc(c.agencies)})`).join(" · ")}</p>
       ${productLine}
       ${updates.length ? sections : empty}
-      ${roadmapBlockHtml(generatedAt, period.vote)}
+      ${roadmapBlockHtml(generatedAt, period.vote, sub.id)}
       ${shareBlockHtml()}
       <hr style="border:0;border-top:1px solid #eaecf0;margin:32px 0 16px">
       ${updates.length ? `<p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0 0 12px"><strong style="color:#667085">이번 메일의 출처</strong><br>

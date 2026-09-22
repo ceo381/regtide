@@ -777,3 +777,10 @@ alter table channels enable row level security;
 - 두 핵심 기준: 수집 무변경. 면책 문구 무변경, 메일 블록 AI 언급 금지(selftest). 26개 통과.
 
 후보를 고른 이유와 "품목별 적용 규격 체크리스트"를 뺀 이유(지금 데이터로는 품목별 적용 규격을 가릴 수 없음)는 2026-09-22 대화 기록 참고.
+
+### AD-1. 투표를 구독자 전용으로 (2026-09-23)
+**마이그레이션 필요** — `schema.sql` 맨 아래 `alter table votes add column subscriber_id ...` 블록(3줄) 실행 (AD 의 테이블 생성 블록을 아직 안 했으면 그것부터).
+- 랜딩: 투표 상자 제거. 티저 + "투표 진행 중"(후보 수, 참여 10명 이상이면 인원) + "구독하고 투표하기" 버튼(구독 폼으로 스크롤). 후보 내용은 비공개.
+- 투표 페이지 `/vote?s=<구독자id>&t=<HMAC>` (`lib/vote-token.ts`, 키 = ADMIN_SESSION_SECRET 또는 CRON_SECRET). 확인 메일·주간 리포트의 개인 링크로만 진입. 토큰 불일치·해지 구독자 → 구독 안내 화면. noindex.
+- 라운드당 1인 1회(서버 검증). 투표·건의 행에 `subscriber_id` 저장, 구독해지 시 DB cascade 로 함께 삭제. 처리방침 1항 문구 갱신("구독 정보와 연결, 해지 시 함께 삭제").
+- 키를 바꾸면 지난 메일의 투표 링크가 무효가 되므로 ADMIN_SESSION_SECRET 은 유지할 것.

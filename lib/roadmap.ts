@@ -6,4 +6,4 @@
 export const ROADMAP_HEADLINE = "매주 월요일, 인허가·품질 담당자의 일이 하나씩 줄어듭니다";
 export const ROADMAP_SUB = "새 기능은 예고 없이 주간 리포트 안에서 먼저 열립니다. 지금 무료로 시작하세요.";
 export const VOTE_TITLE = "다음 기능은 RA·QA 실무자가 고릅니다";
-export const VOTE_SUB = "필요한 기능에 표를 주세요. 여러 개 골라도 되고, 목록에 없으면 직접 적어 주셔도 됩니다. 익명이며 이메일은 받지 않습니다.";
+export const VOTE_SUB = "필요한 기능에 표를 주세요. 여러 개 골라도 되고, 목록에 없으면 직접 적어 주셔도 됩니다. 구독자 전용이며 라운드당 한 번 참여할 수 있습니다.";

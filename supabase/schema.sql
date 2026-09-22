@@ -177,3 +177,8 @@ from (values
 ) as v(label, description, sort)
 where exists (select 1 from vote_rounds where id = '00000000-0000-0000-0000-000000000001')
   and not exists (select 1 from vote_options where round_id = '00000000-0000-0000-0000-000000000001');
+
+-- 2026-09-23: 투표를 구독자 전용으로 — 투표·건의를 구독자와 연결 (해지 시 함께 삭제). 라운드당 1인 1회
+alter table votes add column if not exists subscriber_id uuid references subscribers(id) on delete cascade;
+alter table suggestions add column if not exists subscriber_id uuid references subscribers(id) on delete cascade;
+create index if not exists votes_subscriber_idx on votes(round_id, subscriber_id);

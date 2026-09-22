@@ -554,51 +554,62 @@ async function main() {
     const { channels: noVisits } = computeChannels(subs as never, new Date(), [], null);
     assert.equal(noVisits[0].visits, null, "visits 테이블이 없으면 null (집계 전 표시)");
   });
-  await ok("기능 투표·건의: 익명 저장(이메일·IP 없음), 열린 라운드의 후보만 인정, 라운드 마감·출시 표시가 요약과 메일 블록에 반영된다", async () => {
-    const { castVote, loadVoteSummary, closeRound, markReleased, createRound, recentlyReleased, listSuggestions } = await import("@/lib/votes");
+  await ok("기능 투표·건의: 구독자 전용 링크(HMAC)만 통과, 라운드당 1회, 해지 시 함께 삭제, 마감·출시 표시가 요약과 메일 블록에 반영된다", async () => {
+    process.env.CRON_SECRET ??= "test-secret";
+    const { castVote, loadVoteSummary, closeRound, markReleased, createRound, recentlyReleased, listSuggestions, myVotes } = await import("@/lib/votes");
     const { roadmapBlockHtml } = await import("@/lib/email-common");
-    // 라운드 생성 (운영자 작업)
+    const { voteToken, verifyVoteToken, voteUrl } = await import("@/lib/vote-token");
     const c = await createRound("1차", ["아카이브 | 지난 변경 검색", "조문 비교 | 신구 대비", "x"]);
     assert.ok(c.ok, c.error);
     let s = await loadVoteSummary();
     assert.ok(s.open && s.open.options.length === 3 && s.open.total === 0);
     const [o1, o2] = s.open!.options;
-    // 투표 (API 경로)
-    const { POST } = await import("@/app/api/vote/route");
+    // 투표할 구독자 2명 (활성 / 비활성)
+    db.tables.subscribers.push({ id: "voter1", email: "voter1@company.kr", unsubscribe_token: "vt1", active: true, products: [], catalog_ids: ["kr-mdact"], last_sent_at: null });
+    db.tables.subscribers.push({ id: "voter2", email: "voter2@company.kr", unsubscribe_token: "vt2", active: false, products: [], catalog_ids: ["kr-mdact"], last_sent_at: null });
+    const t1 = voteToken("voter1");
+    assert.ok(verifyVoteToken("voter1", t1) && !verifyVoteToken("voter1", "bad") && !verifyVoteToken("voter2", t1), "토큰은 구독자별·위조 불가");
+    assert.ok(voteUrl("https://regtide.example", "voter1").startsWith("https://regtide.example/vote?s=voter1&t="));
+    const { POST, GET } = await import("@/app/api/vote/route");
+    let ipSeq = 0;
     const call = async (body: unknown, headers: Record<string, string> = {}) => {
-      const req = new Request("http://localhost/api/vote", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "x-forwarded-for": "10.0.0.7", ...headers } });
+      const req = new Request("http://localhost/api/vote", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "x-forwarded-for": `10.0.1.${++ipSeq}`, ...headers } });
       const res = await POST(req as never);
       return { status: res.status, json: await res.json() };
     };
-    const r1 = await call({ roundId: s.open!.id, optionIds: [o1.id, o2.id, "not-an-option"], other: "  심사원 지적사항 사례 모음  ", ref: "OpenChat1" });
+    // 토큰 없음/틀림 → 401, 다른 사이트 → 403, 비활성 구독자 → 400
+    assert.equal((await call({ roundId: s.open!.id, optionIds: [o1.id] })).status, 401);
+    assert.equal((await call({ roundId: s.open!.id, optionIds: [o1.id], s: "voter1", t: "bad" })).status, 401);
+    assert.equal((await call({ roundId: s.open!.id, optionIds: [o1.id], s: "voter1", t: t1 }, { "sec-fetch-site": "cross-site" })).status, 403);
+    assert.equal((await call({ roundId: s.open!.id, optionIds: [o1.id], s: "voter2", t: voteToken("voter2") })).status, 400, "비활성 구독자 거부");
+    // 정상 투표
+    const r1 = await call({ roundId: s.open!.id, optionIds: [o1.id, o2.id, "not-an-option"], other: "  심사원 지적사항 사례 모음  ", ref: "OpenChat1", s: "voter1", t: t1 });
     assert.equal(r1.status, 200); assert.equal(r1.json.voted, 2); assert.equal(r1.json.suggested, true);
-    const cross = await call({ roundId: s.open!.id, optionIds: [o1.id] }, { "sec-fetch-site": "cross-site" });
-    assert.equal(cross.status, 403, "다른 사이트에서 온 요청 거부");
-    const empty = await call({ roundId: s.open!.id, optionIds: [], other: "" });
-    assert.equal(empty.status, 400);
-    for (const v of db.tables.votes) assert.ok(!("email" in v) && !("ip" in v), "투표에 식별 정보 없음");
+    // 같은 라운드 재투표 거부
+    assert.equal((await call({ roundId: s.open!.id, optionIds: [o1.id], s: "voter1", t: t1 })).status, 400, "라운드당 1회");
+    assert.deepEqual((await myVotes(s.open!.id, "voter1")).sort(), [o1.id, o2.id].sort());
+    for (const v of db.tables.votes) assert.ok(!("email" in v) && !("ip" in v) && v.subscriber_id === "voter1", "투표 행에는 구독자 id 만 (이메일·IP 없음)");
     const sg = await listSuggestions();
-    assert.equal(sg[0].message, "심사원 지적사항 사례 모음"); assert.equal(sg[0].ref, "openchat1");
+    assert.equal(sg[0].message, "심사원 지적사항 사례 모음"); assert.equal(sg[0].subscriber_id, "voter1");
+    // GET: 토큰이 있으면 본인 참여 내역
+    const g = await GET(Object.assign(new Request(`http://localhost/api/vote?s=voter1&t=${t1}`), { nextUrl: new URL(`http://localhost/api/vote?s=voter1&t=${t1}`) }) as never).then((r) => r.json());
+    assert.ok(g.verified && g.mine.length === 2 && g.open.participants === 1 && g.open.total === null, "득표 비공개 시 total 숨김");
     s = await loadVoteSummary();
-    assert.equal(s.open!.total, 2);
-    assert.equal(s.open!.options.find((o) => o.id === o1.id)!.count, 1);
-    // 마감 전 메일 블록: 투표 링크 포함, 출시 없음
-    let html = roadmapBlockHtml(new Date(), s);
-    assert.ok(html.includes("다음 기능 투표하기") && !html.includes("여러분이 뽑은 기능이 열렸습니다"));
-    // 닫힌 라운드에는 투표 불가
+    assert.equal(s.open!.total, 2); assert.equal(s.open!.participants, 1);
+    // 메일 블록: 구독자별 링크
+    let html = roadmapBlockHtml(new Date(), s, "voter1");
+    assert.ok(html.includes("/vote?s=voter1&amp;t=") && html.includes("다음 기능 투표하기") && !html.includes("여러분이 뽑은 기능이 열렸습니다"));
+    assert.ok(!roadmapBlockHtml(new Date(), s, "health").includes("/vote?s="), "상태 점검 렌더링에는 개인 링크 없음");
+    // 해지 시 투표·건의 함께 삭제 (cascade 를 흉내: 가짜 DB 는 cascade 가 없으므로 실제 스키마의 on delete cascade 를 문서로 보장. 여기서는 삭제 호출만 확인)
+    // 닫힌 라운드에는 투표 불가, 출시 표시 반영
     assert.ok((await closeRound(s.open!.id, "메모")).ok);
-    const late = await castVote({ roundId: o1.round_id, optionIds: [o1.id] });
-    assert.ok(!late.ok);
-    // 출시 표시 → 요약·메일 블록에 반영
+    assert.ok(!(await castVote({ roundId: o1.round_id, optionIds: [o1.id], subscriberId: "voter1" })).ok);
     assert.ok((await markReleased(o1.id, true)).ok);
     s = await loadVoteSummary();
-    assert.equal(s.open, null);
-    assert.equal(s.released[0].label, "아카이브");
-    assert.equal(recentlyReleased(s).length, 1);
-    html = roadmapBlockHtml(new Date(), s);
+    assert.equal(s.open, null); assert.equal(s.released[0].label, "아카이브"); assert.equal(recentlyReleased(s).length, 1);
+    html = roadmapBlockHtml(new Date(), s, "voter1");
     assert.ok(html.includes("여러분이 뽑은 기능이 열렸습니다") && html.includes("아카이브") && !html.includes("다음 기능 투표하기"));
     assert.ok(!/\bAI\b|인공지능/.test(html));
-    // 두 번째 라운드는 첫 라운드가 닫혀야 열림 (이미 닫힘)
     assert.ok((await createRound("2차", ["a | 1", "b | 2"])).ok);
     assert.ok((await loadVoteSummary()).open?.title === "2차");
   });

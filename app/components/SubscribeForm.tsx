@@ -124,7 +124,7 @@ export default function SubscribeForm() {
   }
 
   return (
-    <form onSubmit={submit}>
+    <form onSubmit={submit} id="subscribe">
       {/* STEP 1 — 품목(등급·유형) + 규격 선택. 등급을 고르면 기본 세트가 미리 선택되어 있음 */}
       <section className="card">
         <h2>
