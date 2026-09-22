@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "개인정보 처리방침 · RegTide" };
+export const metadata = { title: "개인정보 처리방침" };
 
 export default function Privacy() {
   return (

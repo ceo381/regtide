@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { adminEnabled, getAdminSession } from "@/lib/admin-auth";
 
-export const metadata = { title: "관리자 로그인 · RegTide", robots: { index: false, follow: false } };
+export const metadata = { title: "관리자 로그인", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 export default async function AdminLogin({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
