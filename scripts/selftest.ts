@@ -621,7 +621,7 @@ async function main() {
     let html = roadmapBlockHtml(new Date(), s, "voter1");
     assert.ok(!html.includes("/vote?s=voter1") && html.includes("투표해 주셔서 감사합니다"), "이미 투표한 구독자에게는 링크 대신 감사 문구: " + html);
     html = roadmapBlockHtml(new Date(), s, "voter2");
-    assert.ok(html.includes("/vote?s=voter2&amp;t=") && html.includes("다음 기능 투표하기") && !html.includes("여러분이 뽑은 기능이 열렸습니다."));
+    assert.ok(html.includes("/vote?s=voter2&amp;t=") && html.includes("신규 기능 투표하기") && !html.includes("여러분이 뽑은 기능이 열렸습니다."));
     assert.ok(!html.includes("무료로 시작") && !html.includes("구독하고"), "메일 블록에는 랜딩용 구독 권유 문구가 없어야 함");
     assert.ok(!roadmapBlockHtml(new Date(), s, "health").includes("/vote?s="), "상태 점검 렌더링에는 개인 링크 없음");
     // 해지 시 투표·건의 함께 삭제 (cascade 를 흉내: 가짜 DB 는 cascade 가 없으므로 실제 스키마의 on delete cascade 를 문서로 보장. 여기서는 삭제 호출만 확인)
@@ -632,7 +632,7 @@ async function main() {
     s = await loadVoteSummary();
     assert.equal(s.open, null); assert.equal(s.released[0].label, "아카이브"); assert.equal(recentlyReleased(s).length, 1);
     html = roadmapBlockHtml(new Date(), s, "voter1");
-    assert.ok(html.includes("여러분이 뽑은 기능이 열렸습니다.") && html.includes("아카이브") && !html.includes("다음 기능 투표하기"));
+    assert.ok(html.includes("여러분이 뽑은 기능이 열렸습니다.") && html.includes("아카이브") && !html.includes("신규 기능 투표하기"));
     assert.ok(!/\bAI\b|인공지능/.test(html));
     const { participantsLabel } = await import("@/lib/roadmap");
     assert.equal(participantsLabel(12), "", "30명 미만은 표시 안 함");

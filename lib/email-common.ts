@@ -68,7 +68,7 @@ export function roadmapBlockHtml(now = new Date(), summary?: VoteSummary, subscr
   if (open) {
     const voted = !!subscriberId && open.voters.includes(subscriberId);
     if (voted) lines.push(`<p style="margin:0;color:#344054;font-size:13px;line-height:1.6">${esc(EMAIL_VOTE_DONE)}</p>`);
-    else lines.push(`<p style="margin:0;color:#344054;font-size:13px;line-height:1.6">${esc(EMAIL_VOTE_ASK)}<br><a href="${esc(voteUrl)}" style="color:#175cd3;font-weight:600">${esc(EMAIL_VOTE_LINK)}</a> <span style="color:#667085">${esc(EMAIL_VOTE_LINK_NOTE)}</span></p>`);
+    else lines.push(`<p style="margin:0;color:#344054;font-size:13px;line-height:1.6">${esc(EMAIL_VOTE_ASK)} <a href="${esc(voteUrl)}" style="color:#175cd3;font-weight:600">${esc(EMAIL_VOTE_LINK)}</a> <span style="color:#667085">${esc(EMAIL_VOTE_LINK_NOTE)}</span></p>`);
   }
   return `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 0"><tr><td style="padding:14px 16px;border:1px solid #eaecf0;border-radius:8px;background:#fcfcfd">${lines.join("")}</td></tr></table>`;
 }
