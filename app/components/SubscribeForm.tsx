@@ -160,8 +160,8 @@ export default function SubscribeForm() {
                   ))
                 )}
               </div>
-              <button type="button" className="btn-ghost" onClick={() => update(p.uid, { open: !p.open })} aria-expanded={p.open}>
-                {p.open ? "접기" : `규격 수정 (${p.catalogIds.length}개 선택)`}
+              <button type="button" className="btn btn-edit" onClick={() => update(p.uid, { open: !p.open })} aria-expanded={p.open}>
+                {p.open ? "▲ 규격 목록 접기" : `✎ 규격 추가·변경 (${p.catalogIds.length}개 선택됨)`}
               </button>
             </div>
 
