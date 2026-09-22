@@ -87,7 +87,9 @@ async function main() {
     assert.deepEqual(r.errors, []);
     assert.equal(r.inserted, 2);
     assert.equal(db.tables.updates.length, 2);
-    assert.equal(db.tables.page_snapshots.length, 1);
+    assert.equal(db.tables.page_snapshots.filter((r) => !String(r.source_key).startsWith("admin:")).length, 1);
+    const last = db.tables.page_snapshots.find((r) => r.source_key === "admin:last_collect")!;
+    assert.ok(last && JSON.parse(String(last.content)).bySource["mfds_rss:data0009"] === 2, "마지막 수집 결과(소스별 건수)가 저장되어야 함");
   });
   await ok("재수집: 동일 항목은 중복 저장되지 않는다", async () => {
     const r = await collectUpdates(since, adapters);
@@ -148,6 +150,7 @@ async function main() {
     assert.ok(m1.html.includes("출처:") && m1.html.includes("식품의약품안전처 (MFDS)"), "항목별 출처(발행 기관) 표기");
     assert.ok(m1.html.includes("기관 발표일시:") && m1.html.includes("RegTide 수집:"), "기관 발표 일시와 수집 일시 표기");
     assert.ok(m1.html.includes("모니터링 대상:") && m1.html.includes("유럽연합"), "지원 국가 표기");
+    assert.ok(m1.html.includes("정보 수집 기간") && m1.html.includes("8일"), "정보 수집 기간 표기");
     assert.ok(m1.html.includes("이번 메일의 출처"), "하단 출처 목록");
     const m2 = sent.find((m) => m.to === "sw@company.kr")!;
     assert.ok(m2.html.includes("62304"));

@@ -9,12 +9,18 @@ import { fetchText, stripHtml, truncate, type RawUpdate, type SourceAdapter } fr
 export const MFDS_FEEDS: Record<string, string> = {
   data0009: "입법/행정예고",
   data0005: "고시전문",
+  data0006: "훈령전문",
+  data0007: "예규전문",
   data0013: "안내서/지침",
+  ntc0003: "공지",
   ntc0004: "공고",
+  ntc0021: "보도자료",
+  seohan001: "안전성 서한",
   plc0139: "의료기기 회수/판매중지",
+  plc0168: "의료기기 행정처분",
 };
 
-const MEDICAL_DEVICE_HINT = /의료기기|체외진단|디지털의료|의료용|GMP|UDI|표준코드|사이버보안|임상시험/;
+const MEDICAL_DEVICE_HINT = /의료기기|체외진단|디지털의료|의료용|의료제품|GMP|UDI|표준코드|사이버보안|임상시험|소프트웨어 의료|인공지능 의료|SaMD/i;
 
 export function mfdsRssAdapter(brdId: string): SourceAdapter {
   const key = `mfds_rss:${brdId}`;

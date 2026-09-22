@@ -75,6 +75,8 @@ export function decideImpact(u: Pick<UpdateRow, "title" | "source" | "jurisdicti
     if (/개정|제정|공포|시행/.test(t) && /고시|법|규칙|규정|기준/.test(t)) return "high";
     if (/안내서|지침|가이드라인|해설서|질의응답|Q&A/.test(t)) return "medium";
     if (/회수|판매중지|행정처분/.test(t)) return "low";
+    if (/안전성 서한|안전성서한|안전성 정보/.test(t)) return "medium";
+    if (/훈령|예규/.test(t)) return "medium";
     return "medium";
   }
   if (u.jurisdiction === "US") {

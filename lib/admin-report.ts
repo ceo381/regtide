@@ -1,6 +1,8 @@
 import { CATALOG_BY_ID } from "@/lib/catalog";
 import { resendMailer, type Mailer } from "@/lib/digest";
 import { supabaseAdmin, type SubscriberRow } from "@/lib/supabase";
+import { readLastCollect, type CollectResult } from "@/lib/collect";
+import { describeSource } from "@/lib/source-info";
 
 /**
  * 운영자용 리포트 (구독자 현황) — 매일 아침 발송 + 구독자 수가 N의 배수에 도달할 때 즉시 발송
@@ -33,6 +35,7 @@ export interface AdminStats {
   matched24h: number;
   weekDeliveries: Record<string, number>; // status → count
   topCatalog: { id: string; label: string; count: number }[];
+  lastCollect: (CollectResult & { ranAt: string; since: string }) | null;
 }
 
 /** 활성 구독자 수 */
@@ -81,7 +84,8 @@ export async function collectAdminStats(now = new Date(), hours = 24): Promise<A
     .slice(0, 8)
     .map(([id, count]) => ({ id, label: CATALOG_BY_ID[id]?.label ?? id, count }));
 
-  return { now, totalActive, newSubscribers: (newSubs ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog };
+  const lastCollect = await readLastCollect().catch(() => null);
+  return { now, totalActive, newSubscribers: (newSubs ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect };
 }
 
 export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: string }) {
@@ -117,9 +121,28 @@ export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: str
     </table>
     <h3 style="margin:16px 0 0;font-size:15px;color:#101828">신규 구독자</h3>${newList}
     <h3 style="margin:20px 0 0;font-size:15px;color:#101828">많이 선택된 규격·인증</h3>${top}
+    <h3 style="margin:20px 0 0;font-size:15px;color:#101828">수집 소스 상태 (마지막 수집)</h3>${renderCollectStatus(s.lastCollect)}
     <p style="margin:24px 0 0;color:#98a2b3;font-size:12px">이 메일은 운영자에게만 발송됩니다. Supabase 대시보드에서 상세 데이터를 확인하세요.${site ? ` · <a href="${esc(site)}" style="color:#98a2b3">${esc(site)}</a>` : ""}</p>
   </div>
 </div></body></html>`;
+}
+
+function renderCollectStatus(c: AdminStats["lastCollect"]) {
+  if (!c) return `<p style="margin:8px 0 0;color:#667085;font-size:14px">수집 기록 없음 (월요일 크론 실행 전)</p>`;
+  const rows = Object.entries(c.bySource ?? {})
+    .sort((a, b) => a[1] - b[1])
+    .map(([k, n]) => {
+      const si = describeSource(k);
+      const color = n === 0 ? "#b54708" : "#101828";
+      return `<tr><td style="padding:3px 10px 3px 0;color:#667085">${esc(si.agency)} · ${esc(si.name || k)}</td><td style="padding:3px 0;color:${color};font-weight:600;text-align:right">${n}건</td></tr>`;
+    })
+    .join("");
+  const skipped = (c.skipped ?? []).map((x) => `<li>건너뜀: ${esc(x.source)} — ${esc(x.reason)}</li>`).join("");
+  const errors = (c.errors ?? []).map((x) => `<li style="color:#b42318">오류: ${esc(x.source)} — ${esc(x.error)}</li>`).join("");
+  return `<p style="margin:8px 0 4px;color:#667085;font-size:13px">실행 ${esc(fmtKst(c.ranAt))} · 수집 기간 ${esc(fmtKst(c.since))} 이후 · 가져옴 ${c.fetched}건 / 신규 저장 ${c.inserted}건</p>
+    <table style="border-collapse:collapse;font-size:13px">${rows}</table>
+    ${skipped || errors ? `<ul style="margin:8px 0 0;padding-left:18px;color:#344054;font-size:13px">${skipped}${errors}</ul>` : ""}
+    <p style="margin:6px 0 0;color:#98a2b3;font-size:12px">0건 소스가 여러 주 계속되면 피드 구조 변경·차단을 의심하세요. 페이지 감시(EU·ISO·IEC) 소스는 변경이 없으면 0건이 정상입니다.</p>`;
 }
 
 /** 매일 아침 운영 리포트 */

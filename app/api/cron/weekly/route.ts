@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { collectUpdates } from "@/lib/collect";
+import { COLLECT_LOOKBACK_DAYS, collectUpdates } from "@/lib/collect";
 import { classifyPending } from "@/lib/classify";
 import { sendWeeklyDigests, weekWindow } from "@/lib/digest";
 
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
 
   const step = req.nextUrl.searchParams.get("step") ?? "all";
   const now = new Date();
-  const since = new Date(now.getTime() - 8 * 86400_000);
+  const since = new Date(now.getTime() - COLLECT_LOOKBACK_DAYS * 86400_000);
   const out: Record<string, unknown> = { ranAt: now.toISOString(), week: weekWindow(now).weekStart };
 
   try {

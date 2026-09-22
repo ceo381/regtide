@@ -37,7 +37,7 @@ export const PRODUCT_CATEGORIES = [
   "기타",
 ] as const;
 
-const KR_SOURCES = ["mfds_rss:data0009", "mfds_rss:data0005", "mfds_rss:data0013", "mfds_rss:ntc0004", "law_go_kr"];
+const KR_SOURCES = ["mfds_rss:data0009", "mfds_rss:data0005", "mfds_rss:data0006", "mfds_rss:data0007", "mfds_rss:data0013", "mfds_rss:ntc0003", "mfds_rss:ntc0004", "mfds_rss:ntc0021", "mfds_rss:seohan001", "law_go_kr"];
 const US_SOURCES = ["federal_register"];
 const EU_SOURCES = ["page_watch:eu_md_latest", "page_watch:eu_harmonised"];
 const ISO_SOURCES = ["page_watch:iso", "page_watch:iec", "page_watch:fda_recognized_standards"];
@@ -114,7 +114,7 @@ export const CATALOG: CatalogItem[] = [
     label: "부작용 보고 · 회수 · 추적관리 · 재평가",
     description: "이상사례 보고, 회수·판매중지, 추적관리대상 의료기기, 재평가 관련 고시",
     keywords: ["부작용", "이상사례", "회수", "판매중지", "추적관리", "재평가", "안전성 정보"],
-    sources: [...KR_SOURCES, "mfds_rss:plc0139"],
+    sources: [...KR_SOURCES, "mfds_rss:plc0139", "mfds_rss:plc0168"],
   },
   {
     id: "kr-udi",

@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import { CATALOG_BY_ID, JURISDICTION_LABEL, type Jurisdiction } from "@/lib/catalog";
 import { supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
 import { COVERAGE, describeSource, sourcesUsed } from "@/lib/source-info";
+import { COLLECT_LOOKBACK_DAYS } from "@/lib/collect";
 
 const IMPACT_LABEL: Record<string, { text: string; color: string }> = {
   high: { text: "즉시 조치", color: "#b42318" },
@@ -68,6 +69,9 @@ export function relevantUpdates(sub: SubscriberRow, updates: UpdateRow[]): Updat
 }
 
 export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], period: { start: Date; end: Date; generatedAt?: Date }) {
+  const generatedAt = period.generatedAt ?? new Date();
+  // 수집 기간: 크론 실행 시점에서 COLLECT_LOOKBACK_DAYS 일 전 ~ 실행 시점 (각 기관이 이 기간에 발표·게재한 항목을 대상으로 함)
+  const collectSince = new Date(generatedAt.getTime() - COLLECT_LOOKBACK_DAYS * 86400_000);
   const site = process.env.NEXT_PUBLIC_SITE_URL ?? "";
   const unsub = `${site}/api/unsubscribe?token=${encodeURIComponent(sub.unsubscribe_token)}`;
   const byJ: Partial<Record<Jurisdiction, UpdateRow[]>> = {};
@@ -115,7 +119,8 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
     <div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:32px">
       <p style="margin:0 0 4px;color:#667085;font-size:13px;letter-spacing:.04em">REGTIDE · 주간 리포트</p>
       <h1 style="margin:0 0 8px;font-size:22px;color:#101828">의료기기 규격·인증 업데이트</h1>
-      <p style="margin:0 0 6px;color:#475467;font-size:14px">${fmtDate(period.start.toISOString())} ~ ${fmtDate(new Date(period.end.getTime() - 1).toISOString())} · 총 ${updates.length}건 · 리포트 생성 ${fmtDateTime(period.generatedAt ?? new Date())}</p>
+      <p style="margin:0 0 6px;color:#475467;font-size:14px">${fmtDate(period.start.toISOString())} ~ ${fmtDate(new Date(period.end.getTime() - 1).toISOString())} 주간 리포트 · 총 ${updates.length}건</p>
+      <p style="margin:0 0 6px;color:#667085;font-size:12px;line-height:1.6"><strong style="color:#475467">정보 수집 기간</strong>: ${fmtDateTime(collectSince)} ~ ${fmtDateTime(generatedAt)} (이 기간에 각 기관이 발표·게재한 항목, ${COLLECT_LOOKBACK_DAYS}일) · <strong style="color:#475467">리포트 생성</strong>: ${fmtDateTime(generatedAt)}</p>
       <p style="margin:0 0 16px;color:#667085;font-size:12px;line-height:1.6">모니터링 대상: ${COVERAGE.map((c) => `<strong style="color:#475467">${esc(c.country)}</strong>(${esc(c.agencies)})`).join(" · ")}</p>
       ${productLine}
       ${updates.length ? sections : empty}
