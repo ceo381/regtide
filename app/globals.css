@@ -177,3 +177,4 @@ footer a { color: var(--muted); }
 .admin-login-card .btn { background: var(--primary); color: #fff; border-color: var(--primary); }
 .admin-alert { background: #fef3f2; border: 1px solid #fecdca; color: var(--danger); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 0; }
 .admin-login-card input, .admin-search input { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; }
+.admin-tab { background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer; font-family: inherit; }

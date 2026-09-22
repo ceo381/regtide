@@ -24,7 +24,8 @@ export async function POST(req: NextRequest) {
   if (!(await getAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const form = await req.formData();
   const action = String(form.get("action") ?? "");
-  const back = (msg: string) => NextResponse.redirect(new URL(`/admin?msg=${encodeURIComponent(msg)}`, req.url), 303);
+  const tab = String(form.get("tab") ?? "").replace(/[^a-z]/g, "");
+  const back = (msg: string) => NextResponse.redirect(new URL(`/admin?msg=${encodeURIComponent(msg)}${tab ? `#${tab}` : ""}`, req.url), 303);
 
   try {
     if (action === "collect") {

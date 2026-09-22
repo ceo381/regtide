@@ -57,38 +57,37 @@ export async function countActiveSubscribers(): Promise<number> {
 export async function collectAdminStats(now = new Date(), hours = 24): Promise<AdminStats> {
   const sb = supabaseAdmin();
   const since = new Date(now.getTime() - hours * 3600_000).toISOString();
+  const kst = new Date(now.getTime() + 9 * 3600_000);
+  const monday = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() - ((kst.getUTCDay() + 6) % 7)));
 
-  const totalActive = await countActiveSubscribers();
+  // 모든 조회를 병렬로 (Vercel ↔ Supabase 왕복을 1회로 줄임)
+  const [totalActive, newSubsQ, upsQ, delsQ, allSubsQ, lastCollect] = await Promise.all([
+    countActiveSubscribers(),
+    sb.from("subscribers").select("*").gte("created_at", since).order("created_at", { ascending: false }),
+    sb.from("updates").select("jurisdiction,catalog_ids").gte("created_at", since),
+    sb.from("deliveries").select("status").gte("week_start", monday.toISOString().slice(0, 10)),
+    sb.from("subscribers").select("email, catalog_ids").eq("active", true),
+    readLastCollect().catch(() => null),
+  ]);
+  if (newSubsQ.error) throw newSubsQ.error;
+  if (upsQ.error) throw upsQ.error;
+  if (delsQ.error) throw delsQ.error;
+  if (allSubsQ.error) throw allSubsQ.error;
 
-  const { data: newSubs, error: e1 } = await sb
-    .from("subscribers")
-    .select("*")
-    .gte("created_at", since)
-    .order("created_at", { ascending: false });
-  if (e1) throw e1;
-
-  const { data: ups, error: e2 } = await sb.from("updates").select("jurisdiction,catalog_ids").gte("created_at", since);
-  if (e2) throw e2;
   const updates24h: Record<string, number> = {};
   let matched24h = 0;
-  for (const u of (ups ?? []) as { jurisdiction: string; catalog_ids: string[] }[]) {
+  for (const u of (upsQ.data ?? []) as { jurisdiction: string; catalog_ids: string[] }[]) {
     updates24h[u.jurisdiction] = (updates24h[u.jurisdiction] ?? 0) + 1;
     if (u.catalog_ids?.length) matched24h++;
   }
 
-  const kst = new Date(now.getTime() + 9 * 3600_000);
-  const monday = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() - ((kst.getUTCDay() + 6) % 7)));
-  const { data: dels, error: e3 } = await sb.from("deliveries").select("status").gte("week_start", monday.toISOString().slice(0, 10));
-  if (e3) throw e3;
   const weekDeliveries: Record<string, number> = {};
-  for (const d of (dels ?? []) as { status: string }[]) weekDeliveries[d.status] = (weekDeliveries[d.status] ?? 0) + 1;
+  for (const d of (delsQ.data ?? []) as { status: string }[]) weekDeliveries[d.status] = (weekDeliveries[d.status] ?? 0) + 1;
 
-  const { data: allSubs, error: e4 } = await sb.from("subscribers").select("email, catalog_ids").eq("active", true);
-  if (e4) throw e4;
   const tally = new Map<string, number>();
   const domainTally = new Map<string, number>();
   let personalMailCount = 0;
-  for (const s of (allSubs ?? []) as { email: string; catalog_ids: string[] }[]) {
+  for (const s of (allSubsQ.data ?? []) as { email: string; catalog_ids: string[] }[]) {
     for (const id of s.catalog_ids ?? []) tally.set(id, (tally.get(id) ?? 0) + 1);
     const domain = (s.email.split("@")[1] ?? "").toLowerCase();
     if (!domain) continue;
@@ -103,8 +102,7 @@ export async function collectAdminStats(now = new Date(), hours = 24): Promise<A
     .slice(0, 8)
     .map(([id, count]) => ({ id, label: CATALOG_BY_ID[id]?.label ?? id, count }));
 
-  const lastCollect = await readLastCollect().catch(() => null);
-  return { now, totalActive, newSubscribers: (newSubs ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect, multiSeatDomains, companyDomains, personalMailCount };
+  return { now, totalActive, newSubscribers: (newSubsQ.data ?? []) as AdminStats["newSubscribers"], updates24h, matched24h, weekDeliveries, topCatalog, lastCollect, multiSeatDomains, companyDomains, personalMailCount };
 }
 
 export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: string }) {

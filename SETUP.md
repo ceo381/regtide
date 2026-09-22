@@ -461,8 +461,14 @@ ADMIN_SESSION_SECRET=랜덤문자열     # 선택. 없으면 CRON_SECRET 으로 
 | 발송 기록 | 이번 주 `deliveries` (시각·이메일·상태·항목 수·오류) |
 | 운영 작업 | 수집 실행 / 분류 실행 / 테스트 다이제스트 → 운영자 / 운영 리포트 지금 발송. **전체 구독자 발송 버튼은 의도적으로 없음**(월요일 크론 전용) |
 
+### O-3b. 속도 개선 (2026-09-22)
+- 탭 전환이 매번 서버 왕복이라 느리다는 피드백 → **탭 전환·구독자 검색을 브라우저 안에서 처리**(`AdminTabs.tsx`, `SubscriberTable.tsx`). 데이터는 첫 로드 때 한 번만 받고, 탭은 보이기/숨기기만 하므로 즉시 바뀝니다. 선택한 탭은 URL 해시(`#subscribers`)로 유지되어 작업 후 리다이렉트에도 남습니다.
+- 대시보드·운영 리포트의 Supabase 조회 9회를 **병렬**로 바꿔 왕복을 1~2회로 줄임.
+- `vercel.json` 에 `"regions": ["icn1"]`(서울) 추가 — Supabase 가 서울이라 함수를 같은 리전에 두면 왕복 지연이 크게 줄어듭니다. 크론·구독 API 도 함께 빨라집니다.
+- 헤더 우측에 `로드 NNNms`(서버 데이터 로딩 시간)를 표시해 체감 속도 문제를 진단할 수 있게 함. `새로고침` 버튼으로 최신 데이터 재조회.
+
 ### O-4. 관련 파일
-`lib/admin-auth.ts`(인증·세션), `lib/admin-data.ts`(대시보드 데이터), `app/admin/page.tsx`·`app/admin/login/page.tsx`·`app/admin/layout.tsx`(화면), `app/api/admin/login|logout|run/route.ts`(로그인·로그아웃·운영 작업), `app/globals.css`(`.admin*` 스타일).
+`lib/admin-auth.ts`(인증·세션), `lib/admin-data.ts`(대시보드 데이터), `app/admin/page.tsx`·`app/admin/AdminTabs.tsx`·`app/admin/SubscriberTable.tsx`·`app/admin/login/page.tsx`·`app/admin/layout.tsx`(화면), `app/api/admin/login|logout|run/route.ts`(로그인·로그아웃·운영 작업), `app/globals.css`(`.admin*` 스타일).
 
 ---
 
