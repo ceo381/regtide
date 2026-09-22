@@ -47,6 +47,8 @@ export function matchCatalog(u: Pick<UpdateRow, "title" | "raw" | "jurisdiction"
   const kws = new Set<string>();
 
   for (const item of CATALOG) {
+    // 의료기기안심책방(회수·행정처분)은 그 소스를 명시한 규격(시판후 관리)에만 매칭 — 발췌의 "위반법령: 의료기기법" 만으로 법령 규격 전체에 실리지 않게
+    if (u.source.startsWith("mfds_emedi:") && !item.sources.includes(u.source)) continue;
     // 관할이 다르면 매칭 제외. 단, ISO/IEC(INTL) 항목은 어느 관할 문서에서든 규격 번호가 언급되면 매칭 허용
     const sameJurisdiction = item.jurisdiction === u.jurisdiction;
     if (!sameJurisdiction && item.jurisdiction !== "INTL") continue;

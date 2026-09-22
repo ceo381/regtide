@@ -7,6 +7,10 @@ import { COLLECT_LOOKBACK_DAYS } from "@/lib/collect";
 import { loadVoteSummary, type VoteSummary } from "@/lib/votes";
 import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, forwardedNoticeHtml, roadmapBlockHtml, shareBlockHtml } from "@/lib/email-common";
 
+/** 참고(low) 항목은 본문 아래 압축 섹션에 한 줄씩 싣는다. 같은 소스가 이 수를 넘으면 앞 3건만 보이고 나머지는 "외 N건 전체 보기" 링크 */
+export const LOW_GROUP_SHOW = 3;
+export const LOW_GROUP_COLLAPSE_OVER = 4;
+
 const IMPACT_LABEL: Record<string, { text: string; color: string }> = {
   high: { text: "즉시 조치", color: "#b42318" },
   medium: { text: "검토 필요", color: "#b54708" },
@@ -73,12 +77,37 @@ export function relevantUpdates(sub: SubscriberRow, updates: UpdateRow[]): Updat
     });
 }
 
+/**
+ * 참고 항목 압축 섹션 — 이메일에는 펼치기 동작이 없으므로(메일 앱이 스크립트·details 를 지원하지 않음)
+ * 한 줄 목록 + 같은 소스가 많으면 "외 N건 전체 보기" 링크로 대신한다. 원문 링크는 모든 줄에 유지.
+ */
+export function renderLowSection(low: UpdateRow[]): string {
+  if (!low.length) return "";
+  const groups = new Map<string, UpdateRow[]>();
+  for (const u of low) (groups.get(u.source) ?? groups.set(u.source, []).get(u.source)!).push(u);
+  const blocks = [...groups.entries()].map(([source, items]) => {
+    const src = describeSource(source);
+    const label = `${src.agency}${src.name ? ` · ${src.name}` : ""}`;
+    const collapse = items.length > LOW_GROUP_COLLAPSE_OVER;
+    const shown = collapse ? items.slice(0, LOW_GROUP_SHOW) : items;
+    const rows = shown.map((u) => `<tr><td style="padding:5px 0;border-bottom:1px solid #f2f4f7;color:#344054;font-size:13px;line-height:1.5"><span style="color:#98a2b3;font-size:12px;white-space:nowrap">${fmtDate(u.published_at)}</span> &nbsp;<a href="${esc(u.url ?? "#")}" style="color:#344054;text-decoration:none">${esc(u.title)}</a></td></tr>`).join("");
+    const more = collapse
+      ? `<tr><td style="padding:6px 0 2px;font-size:13px">${src.url ? `<a href="${esc(src.url)}" style="color:#175cd3;font-weight:600">외 ${items.length - shown.length}건 — ${esc(src.name || src.agency)}에서 전체 보기</a>` : `<span style="color:#667085">외 ${items.length - shown.length}건 (원문 사이트에서 확인)</span>`}</td></tr>`
+      : "";
+    return `<p style="margin:14px 0 2px;color:#667085;font-size:12px">${esc(label)} · ${items.length}건</p><table width="100%" cellpadding="0" cellspacing="0">${rows}${more}</table>`;
+  });
+  return `<h2 style="font-size:16px;margin:28px 0 0;color:#101828">참고 <span style="color:#667085;font-weight:400;font-size:13px">· ${low.length}건 — 선택하신 규격과 관련은 있으나 직접 조치가 필요하지 않은 항목입니다. 제목을 누르면 원문으로 이동합니다.</span></h2>${blocks.join("")}`;
+}
+
 export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], period: { start: Date; end: Date; generatedAt?: Date; vote?: VoteSummary }) {
   const generatedAt = period.generatedAt ?? new Date();
   // 수집 기간 표기: 지난 발송(7일 전) 이후 매일 수집. 이전 메일에 안내한 항목은 제외됨
   const collectSince = new Date(generatedAt.getTime() - 7 * 86400_000);
+  // 즉시 조치·검토 필요는 관할별 본문에 발췌와 함께, 참고는 하단 압축 섹션에 제목만
+  const mainUpdates = updates.filter((u) => u.impact !== "low");
+  const lowUpdates = updates.filter((u) => u.impact === "low");
   const byJ: Partial<Record<Jurisdiction, UpdateRow[]>> = {};
-  for (const u of updates) (byJ[u.jurisdiction as Jurisdiction] ??= []).push(u);
+  for (const u of mainUpdates) (byJ[u.jurisdiction as Jurisdiction] ??= []).push(u);
 
   const productLine = sub.products.length
     ? `<p style="margin:0 0 16px;color:#475467;font-size:14px">모니터링 품목: ${sub.products.map((p, i) => esc(productLabel(p, i))).join(", ")}</p>`
@@ -116,6 +145,9 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
     .join("");
 
   const empty = `<p style="color:#475467;font-size:15px;padding:24px 0">이번 주에는 선택하신 규격·인증에 해당하는 변경 사항이 감지되지 않았습니다.</p>`;
+  const mainEmpty = `<p style="color:#475467;font-size:14px;padding:16px 0 4px">이번 주에는 즉시 조치·검토가 필요한 변경 사항이 없습니다. 아래 참고 항목만 확인하시면 됩니다.</p>`;
+  const lowSection = renderLowSection(lowUpdates);
+  const countLine = lowUpdates.length ? `총 ${updates.length}건 (주요 ${mainUpdates.length}건 · 참고 ${lowUpdates.length}건)` : `총 ${updates.length}건`;
 
   return `<!doctype html><html lang="ko">${EMAIL_HEAD}<body style="margin:0;background:#f9fafb;font-family:${EMAIL_FONT}">
   <div style="max-width:640px;margin:0 auto;padding:32px 20px">
@@ -123,11 +155,11 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       ${forwardedNoticeHtml()}
       <p style="margin:0 0 4px;color:#667085;font-size:13px;letter-spacing:.04em">REGTIDE · 주간 리포트</p>
       <h1 style="margin:0 0 8px;font-size:22px;color:#101828">의료기기 규격·인증 업데이트</h1>
-      <p style="margin:0 0 6px;color:#475467;font-size:14px">${fmtDate(period.start.toISOString())} ~ ${fmtDate(new Date(period.end.getTime() - 1).toISOString())} 주간 리포트 · 총 ${updates.length}건</p>
+      <p style="margin:0 0 6px;color:#475467;font-size:14px">${fmtDate(period.start.toISOString())} ~ ${fmtDate(new Date(period.end.getTime() - 1).toISOString())} 주간 리포트 · ${countLine}</p>
       <p style="margin:0 0 6px;color:#667085;font-size:12px;line-height:1.6"><strong style="color:#475467">정보 수집 기간</strong>: ${fmtDateTime(collectSince)} ~ ${fmtDateTime(generatedAt)} (매일 08:00 KST 수집, 각 기관이 최근 ${COLLECT_LOOKBACK_DAYS}일 내 발표·게재한 항목 기준, 이전 메일에 안내한 항목은 제외) · <strong style="color:#475467">리포트 생성</strong>: ${fmtDateTime(generatedAt)}</p>
       <p style="margin:0 0 16px;color:#667085;font-size:12px;line-height:1.6">모니터링 대상: ${COVERAGE.map((c) => `<strong style="color:#475467">${esc(c.country)}</strong>(${esc(c.agencies)})`).join(" · ")}</p>
       ${productLine}
-      ${updates.length ? sections : empty}
+      ${updates.length ? (mainUpdates.length ? sections : mainEmpty) + lowSection : empty}
       ${roadmapBlockHtml(generatedAt, period.vote, sub.id)}
       ${shareBlockHtml()}
       <hr style="border:0;border-top:1px solid #eaecf0;margin:32px 0 16px">

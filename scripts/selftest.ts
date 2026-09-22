@@ -335,6 +335,25 @@ async function main() {
       assert.ok(m.html.includes("원 수신자 전용"), "전달받은 사람에게 구독해지 링크 주의 안내");
     }
   });
+  await ok("참고(low) 항목은 하단 압축 섹션에 제목만 싣고, 같은 소스가 4건을 넘으면 3건 + '외 N건 전체 보기' 링크로 접힌다", async () => {
+    const { renderDigestHtml, renderLowSection } = await import("@/lib/digest");
+    const mk = (i: number, impact: "high" | "low", source = "mfds_emedi:disps") => ({ id: `l${i}`, source, external_id: String(i), jurisdiction: "KR", title: `[행정처분] 처분 ${i} — 업체${i}`, url: `https://emedi.mfds.go.kr/disps/view/MNU20266?portalAdmDispsSeq=${i}`, published_at: "2026-09-20T00:00:00Z", raw: "발췌 본문 " + i, summary_ko: "발췌 본문 " + i, impact, catalog_ids: ["kr-vigilance"], matched_keywords: ["행정처분"], classified_at: "2026-09-21T00:00:00Z", created_at: "2026-09-21T00:00:00Z" });
+    const sub = { id: "s1", email: "a@b.kr", products: [], catalog_ids: ["kr-vigilance"], unsubscribe_token: "tok", active: true, created_at: "", consent_version: "v2" };
+    const rows = [mk(0, "high"), ...Array.from({ length: 6 }, (_, i) => mk(i + 1, "low")), mk(20, "low", "mfds_emedi:recall")];
+    const html = renderDigestHtml(sub as never, rows as never, { start: new Date("2026-09-14T00:00:00Z"), end: new Date("2026-09-21T00:00:00Z"), generatedAt: new Date("2026-09-21T00:00:00Z") });
+    assert.ok(html.includes("총 8건 (주요 1건 · 참고 7건)"), "건수 표기");
+    assert.ok(html.includes("발췌 본문 0") && !html.includes("발췌 본문 1"), "참고 항목에는 발췌가 없다");
+    assert.ok(html.includes("처분 1 —") && html.includes("처분 3 —") && !html.includes("처분 4 —"), "6건 중 3건만 제목 표시");
+    assert.ok(html.includes("외 3건 — 의료기기안심책방 행정처분에서 전체 보기") && html.includes('href="https://emedi.mfds.go.kr/disps/MNU20266"'), "나머지는 소스 검색 화면 링크");
+    assert.ok(html.includes("처분 20 —") && !html.includes("외 0건"), "4건 이하 소스는 전부 표시, 접힘 없음");
+    assert.ok(html.includes("의료기기안심책방 회수/판매중지 · 1건"));
+    assert.equal(renderLowSection([]), "");
+    // 주요 항목이 없고 참고만 있으면 "변경 없음" 이 아니라 참고 섹션이 실린다
+    const onlyLow = renderDigestHtml(sub as never, rows.slice(1, 3) as never, { start: new Date("2026-09-14T00:00:00Z"), end: new Date("2026-09-21T00:00:00Z") });
+    assert.ok(onlyLow.includes("아래 참고 항목만 확인") && !onlyLow.includes("감지되지 않았습니다") && onlyLow.includes("참고 <span"));
+    // 참고 줄에도 원문 링크(면책의 '원문에서 확인' 원칙)
+    for (let i = 1; i <= 3; i++) assert.ok(html.includes(`portalAdmDispsSeq=${i}"`), `참고 ${i} 원문 링크`);
+  });
   await ok("모든 항목에 출처·발표/감지 일시·수집 일시가 표기된다", async () => {
     const m = sent.find((x) => x.to === "gmp@company.kr")!;
     const items = m.html.split('<tr><td style="padding:16px 0').slice(1);
@@ -747,9 +766,12 @@ async function main() {
     const { classifyOne } = await import("@/lib/classify");
     const asRow = (u: typeof first) => ({ id: "x", source: u.source, external_id: u.externalId, jurisdiction: u.jurisdiction, title: u.title, url: u.url ?? null, published_at: null, raw: u.raw ?? null, summary_ko: null, impact: null, catalog_ids: [], matched_keywords: [], classified_at: null, created_at: "" });
     const c1 = classifyOne(asRow(first) as never);
-    assert.ok(c1.catalog_ids.includes("kr-vigilance") && c1.impact !== "none", JSON.stringify(c1));
-    const c2 = classifyOne(asRow(dr[0]) as never);
-    assert.ok(c2.catalog_ids.includes("kr-vigilance") && c2.impact !== "none", JSON.stringify(c2));
+    assert.deepEqual(c1.catalog_ids, ["kr-vigilance"], "회수는 시판후 관리 규격에만: " + JSON.stringify(c1));
+    assert.ok(c1.impact !== "none");
+    const disWithLaw = { ...dr[0], raw: (dr[0].raw ?? "") + "\n위반법령: 「의료기기법」 제6조, 「의료기기법 시행규칙」 제36조 · 표시·기재 · 광고 · 공급내역 보고" };
+    const c2 = classifyOne(asRow(disWithLaw) as never);
+    assert.deepEqual(c2.catalog_ids, ["kr-vigilance"], "행정처분은 발췌에 법령명이 있어도 시판후 관리 규격에만: " + JSON.stringify(c2));
+    assert.ok(c2.impact !== "none");
   });
 
   globalThis.fetch = realFetch;
