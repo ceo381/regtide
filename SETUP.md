@@ -602,6 +602,12 @@ alter table channels enable row level security;
 
 ---
 
+## S. 폰트 (2026-09-22)
+- 이메일(주간 다이제스트·운영 리포트)·구독해지 확인 페이지·웹사이트 전부 **Pretendard** 로 통일. CDN(jsdelivr, orioncactus/pretendard v1.3.9) 웹폰트 + 대체 순서 `Pretendard → Apple SD Gothic Neo → Malgun Gothic → sans-serif`.
+- 메일 클라이언트 제약: Apple Mail·iOS Mail 등은 웹폰트를 내려받아 Pretendard 로 표시. **Gmail·Outlook 은 웹폰트를 차단**하므로 기기에 Pretendard 가 설치된 경우에만 적용되고, 아니면 시스템 한글 폰트로 대체됨(깨지지 않음). 모든 뉴스레터에 공통인 제약.
+
+---
+
 ## 자주 만나는 문제
 
 | 증상 | 원인·해결 |

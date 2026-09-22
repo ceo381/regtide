@@ -120,7 +120,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
 
   const empty = `<p style="color:#475467;font-size:15px;padding:24px 0">이번 주에는 선택하신 규격·인증에 해당하는 변경 사항이 감지되지 않았습니다.</p>`;
 
-  return `<!doctype html><html lang="ko"><body style="margin:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif">
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"><style>@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");body,td,p,a,h1,h2,h3,span,strong{font-family:Pretendard,'Pretendard Variable',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',Roboto,sans-serif !important}</style></head><body style="margin:0;background:#f9fafb;font-family:Pretendard,'Pretendard Variable',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',Roboto,sans-serif">
   <div style="max-width:640px;margin:0 auto;padding:32px 20px">
     <div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:32px">
       <p style="margin:0 0 4px;color:#667085;font-size:13px;letter-spacing:.04em">REGTIDE · 주간 리포트</p>

@@ -127,7 +127,7 @@ export function renderAdminHtml(s: AdminStats, opts: { title: string; lead?: str
     ? `<ol style="margin:8px 0 0;padding-left:18px;color:#344054;font-size:14px">${s.topCatalog.map((t) => `<li>${esc(t.label)} — ${t.count}명</li>`).join("")}</ol>`
     : `<p style="margin:8px 0 0;color:#667085;font-size:14px">데이터 없음</p>`;
 
-  return `<!doctype html><html lang="ko"><body style="margin:0;background:#f4f6f8;font-family:-apple-system,Segoe UI,Roboto,'Malgun Gothic',sans-serif">
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"><style>@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");body,td,p,a,h1,h2,h3,span,strong{font-family:Pretendard,'Pretendard Variable',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',Roboto,sans-serif !important}</style></head><body style="margin:0;background:#f4f6f8;font-family:Pretendard,'Pretendard Variable',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',Roboto,sans-serif">
 <div style="max-width:640px;margin:0 auto;padding:24px 16px">
   <div style="background:#fff;border-radius:12px;padding:28px 28px 20px;border:1px solid #eaecf0">
     <p style="margin:0 0 4px;color:#667085;font-size:13px">RegTide 운영 리포트 · ${esc(fmtKst(s.now))}</p>
