@@ -104,3 +104,9 @@ footer a { color: var(--muted); }
 .prose table { border-collapse: collapse; width: 100%; font-size: 14px; }
 .prose th, .prose td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
 .prose th { background: #f9fafb; }
+
+/* 지원 국가 표기 */
+.coverage { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 20px 0 14px; }
+.coverage-item { border: 1px solid var(--border, #eaecf0); border-radius: 10px; padding: 10px 12px; background: #fff; }
+.coverage-item strong { display: block; font-size: 14px; color: #101828; margin-bottom: 2px; }
+.coverage-item span { font-size: 12px; color: #667085; line-height: 1.5; }

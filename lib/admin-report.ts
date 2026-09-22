@@ -7,7 +7,16 @@ import { supabaseAdmin, type SubscriberRow } from "@/lib/supabase";
  *   ADMIN_EMAIL      : 리포트 수신 주소 (기본 ceo@breathings.co.kr)
  *   MILESTONE_EVERY  : 구독자 N명마다 알림 (기본 10)
  */
-export const ADMIN_EMAIL = () => process.env.ADMIN_EMAIL ?? "ceo@breathings.co.kr";
+/**
+ * 운영 리포트 수신자. 구독자에게 절대 가지 않도록 운영자 도메인(@breathings.co.kr) 주소만 허용하고,
+ * 그 외 주소가 설정되어 있으면 발송을 거부한다. (ADMIN_EMAIL_DOMAIN 으로 도메인 변경 가능)
+ */
+export const ADMIN_EMAIL = () => {
+  const to = (process.env.ADMIN_EMAIL ?? "ceo@breathings.co.kr").trim().toLowerCase();
+  const domain = (process.env.ADMIN_EMAIL_DOMAIN ?? "breathings.co.kr").toLowerCase();
+  if (!to.endsWith(`@${domain}`)) throw new Error(`[admin-report] 운영 리포트 수신자(${to})가 허용 도메인(@${domain})이 아니어서 발송을 거부합니다.`);
+  return to;
+};
 export const MILESTONE_EVERY = () => Math.max(1, Number(process.env.MILESTONE_EVERY ?? 10) || 10);
 
 function esc(s: string) {

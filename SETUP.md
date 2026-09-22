@@ -347,7 +347,7 @@ Vercel `Settings → Environment Variables` 에 필요 시 추가 후 Redeploy:
 ADMIN_EMAIL=ceo@breathings.co.kr   # 리포트 수신 주소 (미설정 시 이 값)
 MILESTONE_EVERY=10                 # N명마다 알림 (미설정 시 10)
 ```
-발신자는 기존 `MAIL_FROM` 을 그대로 씁니다. Resend 도메인이 인증되어 있어야 하며, 미인증(`onboarding@resend.dev`) 상태라도 수신자가 Resend 가입 이메일이면 도착합니다.
+**안전장치**: 수신자가 `@breathings.co.kr` 도메인이 아니면 발송을 거부합니다(`ADMIN_EMAIL_DOMAIN` 으로 변경 가능). 운영 리포트가 구독자에게 갈 수 있는 경로는 코드상 없습니다. 발신자는 기존 `MAIL_FROM` 을 그대로 씁니다. Resend 도메인이 인증되어 있어야 하며, 미인증(`onboarding@resend.dev`) 상태라도 수신자가 Resend 가입 이메일이면 도착합니다.
 
 ### L-3. 수동 테스트
 ```powershell
@@ -358,6 +358,21 @@ curl.exe -H "Authorization: Bearer <CRON_SECRET값>" "https://regtide-pi.vercel.
 
 ### L-4. 관련 파일
 `lib/admin-report.ts`(통계 집계·HTML·발송), `app/api/cron/daily-report/route.ts`(크론 엔드포인트), `app/api/subscribe/route.ts`(신규 구독 시 마일스톤 판정), `vercel.json`(크론 2개).
+
+---
+
+## M. 고객 피드백 반영 (2026-09-22)
+
+첫 고객 피드백 3건을 이메일과 랜딩 페이지에 반영했습니다.
+
+| 피드백 | 반영 위치 |
+|---|---|
+| 출처 표기 | 각 항목 아래 `출처: 발행기관(링크) · 소스 채널명`. 메일 하단 "이번 메일의 출처" 목록(이번 메일에 실제 포함된 소스만) |
+| 발표 일시·수집 일시 | 각 항목에 `기관 발표일시: … KST · RegTide 수집: … KST`. 기관이 날짜만 제공하는 소스(Federal Register 등)는 날짜만 표시. 페이지 감시 소스(EU·ISO·IEC)는 기관 발표 시각이 없으므로 `변경 감지일시` 로 표기. 헤더에 `리포트 생성 … KST` 추가 |
+| 지원 국가 표기 | 메일 헤더 `모니터링 대상: 한국(…) · 미국(…) · 유럽연합(…) · 국제규격(…)`, 랜딩 페이지 상단 4개 카드, 하단 안내문 |
+
+관련 파일: `lib/source-info.ts`(출처 메타데이터·지원 국가 목록 `COVERAGE`), `lib/digest.ts`(메일 템플릿), `app/page.tsx`·`app/globals.css`(랜딩), `scripts/selftest.ts`(표기 검증 추가).
+새 소스를 추가할 때는 `lib/source-info.ts` 의 `STATIC` 에 출처 정보를 함께 등록해야 합니다(없으면 소스 키가 그대로 표시됨).
 
 ---
 

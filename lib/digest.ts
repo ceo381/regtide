@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { CATALOG_BY_ID, JURISDICTION_LABEL, type Jurisdiction } from "@/lib/catalog";
 import { supabaseAdmin, type SubscriberRow, type UpdateRow } from "@/lib/supabase";
+import { COVERAGE, describeSource, sourcesUsed } from "@/lib/source-info";
 
 const IMPACT_LABEL: Record<string, { text: string; color: string }> = {
   high: { text: "즉시 조치", color: "#b42318" },
@@ -15,6 +16,15 @@ function esc(s: string) {
 function fmtDate(s: string | null) {
   if (!s) return "";
   return new Date(s).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
+/** 날짜+시각(KST). 시각 정보가 없는 값(자정 UTC = 날짜만 제공되는 소스)은 날짜만 표시 */
+function fmtDateTime(s: string | Date | null) {
+  if (!s) return "";
+  const d = new Date(s);
+  const dateOnly = d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+  if (dateOnly) return fmtDate(d.toISOString());
+  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) + " KST";
 }
 
 /**
@@ -57,7 +67,7 @@ export function relevantUpdates(sub: SubscriberRow, updates: UpdateRow[]): Updat
     });
 }
 
-export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], period: { start: Date; end: Date }) {
+export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], period: { start: Date; end: Date; generatedAt?: Date }) {
   const site = process.env.NEXT_PUBLIC_SITE_URL ?? "";
   const unsub = `${site}/api/unsubscribe?token=${encodeURIComponent(sub.unsubscribe_token)}`;
   const byJ: Partial<Record<Jurisdiction, UpdateRow[]>> = {};
@@ -76,11 +86,17 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
             .filter((id) => sub.catalog_ids.includes(id) && CATALOG_BY_ID[id])
             .map((id) => `<span style="display:inline-block;background:#f2f4f7;color:#344054;border-radius:4px;padding:2px 8px;font-size:12px;margin:0 4px 4px 0">${esc(CATALOG_BY_ID[id].label)}</span>`)
             .join("");
+          const src = describeSource(u.source);
+          const pubLabel = src.detectedOnly ? "변경 감지" : "기관 발표";
           return `
           <tr><td style="padding:16px 0;border-bottom:1px solid #eaecf0">
             <div style="margin-bottom:6px"><span style="display:inline-block;background:${imp.color};color:#fff;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600">${imp.text}</span>
             <span style="color:#667085;font-size:12px;margin-left:8px">${fmtDate(u.published_at)}</span></div>
             <a href="${esc(u.url ?? "#")}" style="color:#101828;font-weight:600;font-size:16px;text-decoration:none">${esc(u.title)}</a>
+            <p style="margin:6px 0 0;color:#667085;font-size:12px;line-height:1.6">
+              출처: ${src.url ? `<a href="${esc(src.url)}" style="color:#667085">${esc(src.agency)}</a>` : esc(src.agency)}${src.name ? ` · ${esc(src.name)}` : ""}<br>
+              ${esc(pubLabel)}일시: ${fmtDateTime(u.published_at) || "원문 참조"} · RegTide 수집: ${fmtDateTime(u.created_at)}
+            </p>
             <p style="margin:8px 0;color:#344054;font-size:14px;line-height:1.6">${esc(u.summary_ko ?? "")}</p>
             ${u.matched_keywords?.length ? `<p style="margin:0 0 6px;color:#667085;font-size:12px">매칭 키워드: ${esc(u.matched_keywords.slice(0, 6).join(", "))}</p>` : ""}
             <div>${tags}</div>
@@ -99,10 +115,14 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
     <div style="background:#fff;border:1px solid #eaecf0;border-radius:12px;padding:32px">
       <p style="margin:0 0 4px;color:#667085;font-size:13px;letter-spacing:.04em">REGTIDE · 주간 리포트</p>
       <h1 style="margin:0 0 8px;font-size:22px;color:#101828">의료기기 규격·인증 업데이트</h1>
-      <p style="margin:0 0 16px;color:#475467;font-size:14px">${fmtDate(period.start.toISOString())} ~ ${fmtDate(new Date(period.end.getTime() - 1).toISOString())} · 총 ${updates.length}건</p>
+      <p style="margin:0 0 6px;color:#475467;font-size:14px">${fmtDate(period.start.toISOString())} ~ ${fmtDate(new Date(period.end.getTime() - 1).toISOString())} · 총 ${updates.length}건 · 리포트 생성 ${fmtDateTime(period.generatedAt ?? new Date())}</p>
+      <p style="margin:0 0 16px;color:#667085;font-size:12px;line-height:1.6">모니터링 대상: ${COVERAGE.map((c) => `<strong style="color:#475467">${esc(c.country)}</strong>(${esc(c.agencies)})`).join(" · ")}</p>
       ${productLine}
       ${updates.length ? sections : empty}
       <hr style="border:0;border-top:1px solid #eaecf0;margin:32px 0 16px">
+      ${updates.length ? `<p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0 0 12px"><strong style="color:#667085">이번 메일의 출처</strong><br>
+      ${sourcesUsed(updates.map((u) => u.source)).map((si) => `${si.url ? `<a href="${esc(si.url)}" style="color:#667085">${esc(si.agency)}</a>` : esc(si.agency)}${si.name ? ` — ${esc(si.name)}` : ""}`).join("<br>")}<br>
+      "기관 발표"는 해당 기관이 원문에 표기한 게재 일시, "변경 감지"는 기관 페이지의 변경을 RegTide 가 확인한 시각입니다. 표기 시각은 모두 한국 표준시(KST)입니다.</p>` : ""}
       <p style="color:#98a2b3;font-size:12px;line-height:1.6;margin:0 0 8px"><strong style="color:#667085">이용 안내 및 면책</strong><br>
       본 메일은 식약처, 국가법령정보센터, 미국 Federal Register, EU Commission, ISO/IEC 등 공개된 규제 정보 소스를 자동으로 수집·분류하여 제공하는 <strong>참고용 정보</strong>입니다. 법률·규제 자문이 아니며 법적 효력이 없습니다. 발췌문은 원문의 일부이므로 정확한 내용과 시행일은 반드시 원문 링크에서 확인하시기 바랍니다.<br>
       수집 소스의 변경, 사이트 접근 제한, 분류 규칙의 한계 등으로 일부 변경 사항이 누락되거나 지연되거나 관련 없는 항목이 포함될 수 있습니다. 본 정보를 바탕으로 한 인허가·품질·사업상 판단과 그 결과에 대한 책임은 이용자에게 있으며, RegTide 는 이에 대해 책임을 지지 않습니다. 각 원문의 저작권은 해당 발행 기관에 있습니다. 전문은 <a href="${esc(site)}/disclaimer" style="color:#667085">이용 안내 및 면책조항</a>을 참고하세요.</p>
@@ -178,7 +198,7 @@ export async function sendWeeklyDigests(
         from,
         to: sub.email,
         subject: `[RegTide] 이번 주 의료기기 규제 업데이트 ${mine.length}건 (${weekStart} 주)`,
-        html: renderDigestHtml(sub, mine, { start: periodStart, end: periodEnd }),
+        html: renderDigestHtml(sub, mine, { start: periodStart, end: periodEnd, generatedAt: now }),
       });
       await record({ update_ids: mine.map((u) => u.id), provider_message_id: sent.id ?? null, status: "sent", error: null });
       await sb.from("subscribers").update({ last_sent_at: new Date().toISOString() }).eq("id", sub.id);

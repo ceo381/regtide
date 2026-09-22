@@ -144,8 +144,14 @@ async function main() {
     assert.ok(!m1.html.includes("의료기기법 시행규칙"), "선택하지 않은 항목은 포함되지 않아야 함");
     assert.ok(m1.html.includes("/api/unsubscribe?token=tok1"));
     assert.ok(m1.html.includes("저주파자극기"));
+    // 고객 피드백: 출처 · 기관 발표/수집 일시 · 지원 국가 표기
+    assert.ok(m1.html.includes("출처:") && m1.html.includes("식품의약품안전처 (MFDS)"), "항목별 출처(발행 기관) 표기");
+    assert.ok(m1.html.includes("기관 발표일시:") && m1.html.includes("RegTide 수집:"), "기관 발표 일시와 수집 일시 표기");
+    assert.ok(m1.html.includes("모니터링 대상:") && m1.html.includes("유럽연합"), "지원 국가 표기");
+    assert.ok(m1.html.includes("이번 메일의 출처"), "하단 출처 목록");
     const m2 = sent.find((m) => m.to === "sw@company.kr")!;
     assert.ok(m2.html.includes("62304"));
+    assert.ok(m2.html.includes("변경 감지일시:") && m2.html.includes("European Commission"), "페이지 감시 소스는 '변경 감지'로 표기");
     assert.equal(db.tables.deliveries.filter((d) => d.status === "sent").length, 2);
     assert.equal(db.tables.deliveries.filter((d) => d.status === "skipped_empty").length, 1);
   });
