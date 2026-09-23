@@ -3,7 +3,8 @@ import { getAdminSession } from "@/lib/admin-auth";
 import { COLLECT_LOOKBACK_DAYS, collectUpdates } from "@/lib/collect";
 import { classifyAll } from "@/lib/classify";
 import { sendWeeklyDigests } from "@/lib/digest";
-import { ADMIN_EMAIL, sendDailyAdminReport } from "@/lib/admin-report";
+import { sendDailyAdminReport } from "@/lib/admin-report";
+import { addTestEmail, removeTestEmail, testRecipients } from "@/lib/test-recipients";
 import { supabaseAdmin } from "@/lib/supabase";
 import { deleteChannel, upsertChannel, validateChannel } from "@/lib/channels";
 import { recordUnsubscribe, type ChurnSource } from "@/lib/churn";
@@ -17,7 +18,8 @@ export const dynamic = "force-dynamic";
  * 대시보드 액션 (관리자 세션 필수). form POST → 처리 후 /admin 으로 리다이렉트(결과 메시지 쿠키 대신 쿼리로 전달)
  *   action=collect     지난 8일 수집
  *   action=classify    미분류 항목 분류
- *   action=testsend    운영자에게만 테스트 다이제스트 (recent 창)
+ *   action=testsend    운영자 + 테스트 수신자에게 테스트 다이제스트 (recent 창, 발송 기록 없음)
+ *   action=testemail_add / testemail_remove  테스트 수신자 추가·삭제 (email)
  *   action=dailyreport 운영 리포트 즉시 발송
  *   action=deactivate  구독자 비활성화 (id)
  *   action=delete      구독자 삭제 (id)
@@ -42,8 +44,21 @@ export async function POST(req: NextRequest) {
       return back(`분류 완료: ${r.classified}건 처리 · ${r.matched}건 규격 매칭 · 오류 ${r.errors.length}`);
     }
     if (action === "testsend") {
-      const r = await sendWeeklyDigests(new Date(), { sendEmpty: true, recent: true, only: ADMIN_EMAIL() });
-      return back(r.sent ? `테스트 다이제스트를 ${ADMIN_EMAIL()} 로 보냈습니다.` : `테스트 발송 실패: ${r.failed[0]?.error ?? "알 수 없음"}`);
+      // 운영자 + 테스트 수신자 각각에게 테스트 1통씩 (발송 기록 없음, 제목 [테스트])
+      const ok: string[] = [], bad: string[] = [];
+      for (const { email: to } of await testRecipients()) {
+        const r = await sendWeeklyDigests(new Date(), { sendEmpty: true, recent: true, only: to });
+        if (r.sent) ok.push(to); else bad.push(`${to} (${r.failed[0]?.error ?? "알 수 없음"})`);
+      }
+      return back([ok.length ? `테스트 다이제스트를 ${ok.join(", ")} 로 보냈습니다.` : "", bad.length ? `실패: ${bad.join(", ")}` : ""].filter(Boolean).join(" "));
+    }
+    if (action === "testemail_add") {
+      const r = await addTestEmail(String(form.get("email") ?? ""));
+      return back(r.message);
+    }
+    if (action === "testemail_remove") {
+      const r = await removeTestEmail(String(form.get("email") ?? ""));
+      return back(r.message);
     }
     if (action === "dailyreport") {
       const r = await sendDailyAdminReport(new Date());

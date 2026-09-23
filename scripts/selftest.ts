@@ -796,6 +796,31 @@ async function main() {
     assert.equal(c2.impact, "low");
   });
 
+  await ok("테스트 수신자: 대시보드에서 추가·삭제(형식 검증·중복·최대 5), 환경변수분 병합, 운영자 고정, 운영 리포트는 운영자 도메인만", async () => {
+    const { addTestEmail, removeTestEmail, testRecipients, listStoredTestEmails } = await import("@/lib/test-recipients");
+    const { ADMIN_EMAIL } = await import("@/lib/admin-report");
+    assert.deepEqual((await testRecipients()).map((r) => r.email), ["ceo@breathings.co.kr"], "기본은 운영자만");
+    assert.ok((await addTestEmail(" Me@Gmail.com ")).ok);
+    assert.ok(!(await addTestEmail("me@gmail.com")).ok, "중복 거부");
+    assert.ok(!(await addTestEmail("bad-address")).ok, "형식 오류 거부");
+    assert.ok(!(await addTestEmail("ceo@breathings.co.kr")).ok, "운영자 주소는 이미 포함");
+    for (const e of ["a@x.kr", "b@x.kr", "c@x.kr", "d@x.kr"]) assert.ok((await addTestEmail(e)).ok);
+    assert.ok(!(await addTestEmail("f@x.kr")).ok, "최대 5개");
+    assert.equal((await listStoredTestEmails()).length, 5);
+    process.env.TEST_EMAILS = "env@naver.com, me@gmail.com";
+    const all = await testRecipients();
+    assert.deepEqual(all.map((r) => r.source), ["admin", "dashboard", "dashboard", "dashboard", "dashboard", "dashboard", "env"], "운영자 → 대시보드 → 환경변수, 중복 제거");
+    delete process.env.TEST_EMAILS;
+    assert.ok((await removeTestEmail("ME@gmail.com")).ok);
+    assert.ok(!(await removeTestEmail("nobody@x.kr")).ok);
+    assert.ok(!(await listStoredTestEmails()).includes("me@gmail.com"));
+    for (const e of ["a@x.kr", "b@x.kr", "c@x.kr", "d@x.kr"]) await removeTestEmail(e);
+    assert.deepEqual(await listStoredTestEmails(), []);
+    process.env.ADMIN_EMAIL = "me@gmail.com";
+    assert.throws(() => ADMIN_EMAIL(), /허용 도메인/, "운영 리포트 수신자는 운영자 도메인만");
+    delete process.env.ADMIN_EMAIL;
+  });
+
   globalThis.fetch = realFetch;
   console.log(`\\n${process.exitCode ? "실패한 항목이 있습니다." : `모든 검증 통과 (${passed}개)`}\n`);
 }

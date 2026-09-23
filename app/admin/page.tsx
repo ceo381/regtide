@@ -4,6 +4,7 @@ import { loadDashboard } from "@/lib/admin-data";
 import { CATALOG_BY_ID, JURISDICTION_LABEL, productLabel, type Jurisdiction } from "@/lib/catalog";
 import { describeSource } from "@/lib/source-info";
 import { ADMIN_EMAIL, MILESTONE_EVERY } from "@/lib/admin-report";
+import { TEST_RECIPIENTS_MAX, testRecipients } from "@/lib/test-recipients";
 import AdminTabs from "./AdminTabs";
 import { NO_REF } from "@/lib/admin-data";
 import ChannelManager from "./ChannelManager";
@@ -27,7 +28,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const { msg } = await searchParams;
 
   const t0 = Date.now();
-  const d = await loadDashboard();
+  const [d, recipients] = await Promise.all([loadDashboard(), testRecipients().catch(() => [{ email: ADMIN_EMAIL(), source: "admin" as const }])]);
   const loadMs = Date.now() - t0;
   const { stats } = d;
   const maxDay = Math.max(1, ...d.signupsByDay.map((x) => x.count));
@@ -217,13 +218,36 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const ops = (
     <section className="card">
       <h2>운영 작업</h2>
-      <p className="sub">구독자 전체 발송은 여기서 할 수 없습니다(월요일 크론 전용). 테스트 발송은 운영자({ADMIN_EMAIL()})에게만 갑니다. 수집·분류는 10~40초 걸릴 수 있습니다.</p>
+      <p className="sub">구독자 전체 발송은 여기서 할 수 없습니다(월요일 크론 전용). 테스트 발송은 아래 테스트 수신자에게만 갑니다. 수집·분류는 10~40초 걸릴 수 있습니다.</p>
       <div className="ops-grid">
         <form method="post" action="/api/admin/run"><input type="hidden" name="action" value="collect" /><input type="hidden" name="tab" value="ops" /><button className="btn">수집 실행</button><p>지난 8일치 소스를 모두 가져와 새 항목만 저장합니다. 메일 발송 없음.</p></form>
         <form method="post" action="/api/admin/run"><input type="hidden" name="action" value="classify" /><input type="hidden" name="tab" value="ops" /><button className="btn">분류 실행</button><p>미분류 항목에 영향도·규격 매칭을 부여합니다. 메일 발송 없음.</p></form>
-        <form method="post" action="/api/admin/run"><input type="hidden" name="action" value="testsend" /><input type="hidden" name="tab" value="ops" /><button className="btn">테스트 다이제스트 → 운영자</button><p>최근 8일 항목으로 전체 규격 기준 미리보기 메일을 운영자에게 1통 보냅니다.</p></form>
-        <form method="post" action="/api/admin/run"><input type="hidden" name="action" value="dailyreport" /><input type="hidden" name="tab" value="ops" /><button className="btn">운영 리포트 지금 발송</button><p>내일 아침에 올 일일 리포트를 지금 받아봅니다.</p></form>
+        <form method="post" action="/api/admin/run"><input type="hidden" name="action" value="testsend" /><input type="hidden" name="tab" value="ops" /><button className="btn">테스트 다이제스트 발송</button><p>정기 발송과 같은 최근 14일 후보로, 운영자·테스트 수신자에게 각 1통씩 미리보기 메일을 보냅니다(구독 중인 주소는 그 구독 설정 기준, 아니면 전체 규격 기준).</p></form>
+        <form method="post" action="/api/admin/run"><input type="hidden" name="action" value="dailyreport" /><input type="hidden" name="tab" value="ops" /><button className="btn">운영 리포트 지금 발송</button><p>내일 아침에 올 일일 리포트를 지금 받아봅니다(운영자 주소로만).</p></form>
       </div>
+      <h3 style={{ margin: "24px 0 4px" }}>테스트 수신자 ({recipients.length}명)</h3>
+      <p className="sub">"테스트 다이제스트 발송"을 누르면 아래 주소로 각 1통씩 갑니다. 제목에 [테스트]가 붙고 발송 기록이 남지 않아 정기 발송에는 영향이 없습니다. Gmail·네이버 등 메일 앱별 표시·스팸함 확인용으로 본인 주소를 추가하세요(최대 {TEST_RECIPIENTS_MAX}개). 운영 리포트는 운영자 주소로만 갑니다.</p>
+      <table className="admin-table"><tbody>
+        {recipients.map((r) => (
+          <tr key={r.email}>
+            <td>{r.email}</td>
+            <td style={{ color: "var(--muted)" }}>{r.source === "admin" ? "운영자 (고정)" : r.source === "env" ? "환경변수 TEST_EMAILS (Vercel에서 관리)" : "대시보드 등록"}</td>
+            <td className="num">
+              {r.source === "dashboard" && (
+                <form method="post" action="/api/admin/run" style={{ margin: 0 }}>
+                  <input type="hidden" name="action" value="testemail_remove" /><input type="hidden" name="tab" value="ops" /><input type="hidden" name="email" value={r.email} />
+                  <button className="btn ghost" type="submit">삭제</button>
+                </form>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody></table>
+      <form method="post" action="/api/admin/run" style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <input type="hidden" name="action" value="testemail_add" /><input type="hidden" name="tab" value="ops" />
+        <input type="email" name="email" required placeholder="테스트 받을 이메일 (예: 본인 Gmail)" style={{ flex: "1 1 260px" }} />
+        <button className="btn" type="submit">추가</button>
+      </form>
     </section>
   );
 
