@@ -821,3 +821,4 @@ alter table channels enable row level security;
 - **회수·행정처분 영향도 고정**: `decideImpact` 가 `mfds_emedi:*` 는 항상 참고(low).
 - **List-Unsubscribe 헤더**: 정기 리포트에 `List-Unsubscribe: <…/api/unsubscribe?token=…>` 추가(테스트 발송 제외). 원클릭(`List-Unsubscribe-Post`)은 넣지 않아 확인 페이지를 거친다.
 - 참고: Vercel Hobby 크론은 지정 시각부터 1시간 안에 실행된다(월요일 09:00~09:59 도착).
+- 발송 시각 표기를 "오전 9시경"으로 통일 (FAQ·구독 폼·확인 메일·첫 리포트 예정일). 크론 실행 창(09:00~09:59)과 맞춤.

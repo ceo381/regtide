@@ -506,7 +506,8 @@ async function main() {
     assert.equal(m.to, "welcome@company.co.kr", "수신자는 신청자 본인");
     assert.ok(m.subject.includes("구독이 완료"));
     assert.ok(m.html.includes("인공호흡기"), "등록 품목");
-    assert.ok(m.html.includes("매주 월요일 09:00 KST"), "발송 주기");
+    assert.ok(m.html.includes("매주 월요일 오전 9시경(KST)"), "발송 주기");
+    assert.ok(/첫 리포트 예정: <strong>[^<]*오전 9시경<\/strong>/.test(m.html), "첫 리포트 예정일은 오전 9시경으로 표기");
     assert.ok(m.html.includes("첫 리포트 예정"), "첫 리포트 예정일");
     assert.ok(m.html.includes("모니터링 대상"), "지원 국가·기관");
     const footer = m.html.slice(m.html.indexOf("이용 안내 및 면책"));

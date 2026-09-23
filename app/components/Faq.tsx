@@ -5,7 +5,7 @@
 export const FAQ: { q: string; a: string }[] = [
   {
     q: "RegTide 는 어떤 서비스인가요?",
-    a: "의료기기 인허가·품질(RA/QA) 담당자를 위한 무료 규제 변경 알림입니다. 보유 품목과 적용 규격·인증을 선택하면, 식약처·법제처·미국 FDA(Federal Register)·EU Commission/MDCG·ISO/IEC 의 공개 정보를 매일 수집해 매주 월요일 09:00 에 관련 변경 사항만 이메일로 보내드립니다.",
+    a: "의료기기 인허가·품질(RA/QA) 담당자를 위한 무료 규제 변경 알림입니다. 보유 품목과 적용 규격·인증을 선택하면, 식약처·법제처·미국 FDA(Federal Register)·EU Commission/MDCG·ISO/IEC 의 공개 정보를 매일 수집해 매주 월요일 오전 9시경 관련 변경 사항만 이메일로 보내드립니다.",
   },
   {
     q: "어떤 국가·기관의 규제를 모니터링하나요?",

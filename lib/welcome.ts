@@ -26,8 +26,9 @@ export function nextMondaySend(now = new Date()) {
   return new Date(mondayKst - 9 * 3600_000);
 }
 
+/** 발송 예정일 표기 — 크론이 09시대 안에서 실행되므로 정확한 분 대신 "오전 9시경" */
 function fmtKst(d: Date) {
-  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }) + " KST";
+  return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", weekday: "short" }) + " 오전 9시경";
 }
 
 export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; now?: Date; vote?: VoteSummary }) {
@@ -63,7 +64,7 @@ export function renderWelcomeHtml(sub: SubscriberRow, opts: { isNew: boolean; no
       <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eaecf0;border-radius:8px;background:#fcfcfd"><tr><td style="padding:16px 20px">
         <p style="margin:0;color:#667085;font-size:12px;letter-spacing:.04em">발송 안내</p>
         <p style="margin:6px 0 0;color:#101828;font-size:14px;line-height:1.7">
-          <strong>매주 월요일 09:00 KST</strong> 에 지난 한 주의 변경 사항을 한 통으로 보내드립니다.<br>
+          <strong>매주 월요일 오전 9시경(KST)</strong> 지난 한 주의 변경 사항을 한 통으로 보내드립니다.<br>
           첫 리포트 예정: <strong>${fmtKst(firstSend)}</strong><br>
           <span style="color:#667085;font-size:13px">첫 리포트에는 최근 ${CANDIDATE_DAYS}일 안에 수집된 항목 중 선택하신 규격·인증에 해당하는 것이 함께 실립니다. 해당 항목이 없는 주에도 "이번 주 변경 없음"으로 짧게 안내드려, 모니터링이 계속되고 있음을 확인하실 수 있습니다.</span>
         </p>
