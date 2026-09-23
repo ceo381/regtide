@@ -159,7 +159,7 @@ async function main() {
     assert.ok(m1.html.includes("출처:") && m1.html.includes("식품의약품안전처 (MFDS)"), "항목별 출처(발행 기관) 표기");
     assert.ok(m1.html.includes("기관 발표일시:") && m1.html.includes("RegTide 수집:"), "기관 발표 일시와 수집 일시 표기");
     assert.ok(m1.html.includes("모니터링 대상:") && m1.html.includes("유럽연합"), "지원 국가 표기");
-    assert.ok(m1.html.includes("정보 수집 기간") && m1.html.includes("8일"), "정보 수집 기간 표기");
+    assert.ok(m1.html.includes("RegTide 수집 기간") && m1.html.includes("8일"), "정보 수집 기간 표기");
     assert.ok(m1.html.includes("이번 메일의 출처"), "하단 출처 목록");
     const m2 = sent.find((m) => m.to === "sw@company.kr")!;
     assert.ok(m2.html.includes("62304"));
@@ -350,8 +350,12 @@ async function main() {
     // 수집 기간 표기는 실제 실린 항목의 가장 이른 수집 시각까지 넓어진다 (첫 리포트 14일치와 어긋나지 않게)
     const early = [{ ...mk(90, "high"), created_at: "2026-09-10T00:00:00Z" }];
     const eh = renderDigestHtml(sub as never, early as never, { start: new Date("2026-09-14T00:00:00Z"), end: new Date("2026-09-21T00:00:00Z"), generatedAt: new Date("2026-09-21T00:30:00Z"), firstReport: true });
-    assert.ok(/정보 수집 기간<\/strong>: 2026\. 09\. 10\./.test(eh), "수집 기간 시작 = 가장 이른 항목 수집일");
-    assert.ok(eh.includes("첫 리포트이므로") && eh.includes("매일 오전 8시경 수집"));
+    assert.ok(/RegTide 수집 기간<\/strong>: 2026\. 09\. 10\./.test(eh), "수집 기간 시작 = 가장 이른 항목 수집일");
+    assert.ok(/기관 발표일<\/strong>: 2026\. 09\. 20\./.test(eh), "기관 발표일 범위 별도 표기");
+    // 영향도 라벨은 서로 다른 채움 방식
+    const big2 = renderDigestHtml(sub as never, [mk(1, "high"), { ...mk(2, "high"), impact: "medium" }, mk(3, "low")] as never, { start: new Date("2026-09-14T00:00:00Z"), end: new Date("2026-09-21T00:00:00Z") });
+    assert.ok(big2.includes("background:#d92d20;color:#ffffff") && big2.includes("background:#fef0c7;color:#93370d"), "즉시 조치·검토 필요 라벨 색 구분");
+    assert.ok(eh.includes("첫 리포트이므로") && eh.includes("매일 오전 8시경 각 기관이"));
     assert.ok(!html.includes("첫 리포트이므로"), "첫 리포트가 아니면 안내 없음");
     assert.ok(html.includes("발췌 본문 0") && !html.includes("발췌 본문 1"), "참고 항목에는 발췌가 없다");
     assert.ok(html.includes("처분 1 —") && html.includes("처분 3 —") && !html.includes("처분 4 —"), "6건 중 3건만 제목 표시");

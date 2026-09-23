@@ -16,10 +16,14 @@ export const LOW_GROUP_COLLAPSE_OVER = 4;
  */
 export const MAIN_FULL_MAX = 25;
 
-const IMPACT_LABEL: Record<string, { text: string; color: string }> = {
-  high: { text: "즉시 조치", color: "#b42318" },
-  medium: { text: "검토 필요", color: "#b54708" },
-  low: { text: "참고", color: "#175cd3" },
+/**
+ * 영향도 라벨 — 색만이 아니라 채움 방식도 달리해 한눈에(흑백·색약 환경에서도) 구분되게 한다.
+ *  즉시 조치: 빨강 채움 + 흰 글자 / 검토 필요: 노랑 바탕 + 갈색 글자 + 테두리 / 참고: 회색 테두리만
+ */
+const IMPACT_LABEL: Record<string, { text: string; style: string }> = {
+  high: { text: "즉시 조치", style: "background:#d92d20;color:#ffffff;border:1px solid #d92d20" },
+  medium: { text: "검토 필요", style: "background:#fef0c7;color:#93370d;border:1px solid #fdb022" },
+  low: { text: "참고", style: "background:#ffffff;color:#475467;border:1px solid #d0d5dd" },
 };
 
 function fmtDate(s: string | null) {
@@ -110,6 +114,9 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
   // 실제로 실린 항목의 가장 이른 수집 시각까지 넓힌다 (첫 리포트는 최근 14일치를 담으므로 "지난 7일"로 표기하면 어긋남)
   const earliestCollected = updates.reduce((m, u) => (u.created_at && u.created_at < m ? u.created_at : m), new Date(generatedAt.getTime() - 7 * 86400_000).toISOString());
   const collectSince = new Date(earliestCollected);
+  // 기관 발표일 범위 — 수집은 각 기관의 최근 며칠치를 되돌아보므로 발표일이 수집 시작일보다 앞설 수 있다(예: 14일 발표 → 16일 수집)
+  const pubs = updates.map((u) => u.published_at).filter((d): d is string => !!d).sort();
+  const pubRange = pubs.length ? ` · <strong style="color:#475467">기관 발표일</strong>: ${fmtDate(pubs[0])} ~ ${fmtDate(pubs[pubs.length - 1])}` : "";
   const firstNote = period.firstReport
     ? `<p style="margin:0 0 6px;color:#175cd3;font-size:13px;line-height:1.6">첫 리포트이므로 지난 한 주뿐 아니라 최근 ${CANDIDATE_DAYS}일 동안 수집된 항목 중 선택하신 규격에 해당하는 것을 함께 담았습니다. 다음 리포트부터는 지난 한 주의 새 항목만 보내드립니다.</p>`
     : "";
@@ -140,7 +147,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
           const pubLabel = src.detectedOnly ? "변경 감지" : "기관 발표";
           return `
           <tr><td style="padding:16px 0;border-bottom:1px solid #eaecf0">
-            <div style="margin-bottom:6px"><span style="display:inline-block;background:${imp.color};color:#fff;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600">${imp.text}</span>
+            <div style="margin-bottom:6px"><span style="display:inline-block;${imp.style};border-radius:4px;padding:1px 8px;font-size:12px;font-weight:700">${imp.text}</span>
             <span style="color:#667085;font-size:12px;margin-left:8px">${fmtDate(u.published_at)}</span></div>
             <a href="${esc(u.url ?? "#")}" style="color:#101828;font-weight:600;font-size:16px;text-decoration:none">${esc(u.title)}</a>
             <p style="margin:6px 0 0;color:#667085;font-size:12px;line-height:1.6">
@@ -166,7 +173,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
         .map((u) => {
           const imp = IMPACT_LABEL[u.impact ?? "medium"] ?? IMPACT_LABEL.medium;
           const src = describeSource(u.source);
-          return `<tr><td style="padding:6px 0;border-bottom:1px solid #f2f4f7;color:#344054;font-size:13px;line-height:1.5"><span style="display:inline-block;background:${imp.color};color:#fff;border-radius:3px;padding:0 6px;font-size:11px;font-weight:600">${imp.text}</span> <span style="color:#98a2b3;font-size:12px">${fmtDate(u.published_at)} · ${esc(src.agency)}</span><br><a href="${esc(u.url ?? "#")}" style="color:#344054;text-decoration:none">${esc(u.title)}</a></td></tr>`;
+          return `<tr><td style="padding:6px 0;border-bottom:1px solid #f2f4f7;color:#344054;font-size:13px;line-height:1.5"><span style="display:inline-block;${imp.style};border-radius:3px;padding:0 6px;font-size:11px;font-weight:700">${imp.text}</span> <span style="color:#98a2b3;font-size:12px">${fmtDate(u.published_at)} · ${esc(src.agency)}</span><br><a href="${esc(u.url ?? "#")}" style="color:#344054;text-decoration:none">${esc(u.title)}</a></td></tr>`;
         })
         .join("")}</table>`
     : "";
@@ -180,7 +187,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       <h1 style="margin:0 0 8px;font-size:22px;color:#101828">의료기기 규격·인증 업데이트</h1>
       <p style="margin:0 0 6px;color:#475467;font-size:14px">${fmtDate(period.start.toISOString())} ~ ${fmtDate(new Date(period.end.getTime() - 1).toISOString())} 주간 리포트 · ${countLine}</p>
       ${firstNote}
-      <p style="margin:0 0 6px;color:#667085;font-size:12px;line-height:1.6"><strong style="color:#475467">정보 수집 기간</strong>: ${fmtDateTime(collectSince)} ~ ${fmtDateTime(generatedAt)} (매일 오전 8시경 수집, 각 기관이 최근 ${COLLECT_LOOKBACK_DAYS}일 내 발표·게재한 항목 기준, 이전 메일에 안내한 항목은 제외) · <strong style="color:#475467">리포트 생성</strong>: ${fmtDateTime(generatedAt)}</p>
+      <p style="margin:0 0 6px;color:#667085;font-size:12px;line-height:1.6"><strong style="color:#475467">RegTide 수집 기간</strong>: ${fmtDateTime(collectSince)} ~ ${fmtDateTime(generatedAt)}${pubRange}<br>매일 오전 8시경 각 기관이 최근 ${COLLECT_LOOKBACK_DAYS}일 안에 발표·게재한 항목을 확인해 새 항목을 수집하므로, 기관 발표일은 수집일보다 며칠 앞설 수 있습니다. 이전 메일에 안내한 항목은 제외합니다. · <strong style="color:#475467">리포트 생성</strong>: ${fmtDateTime(generatedAt)}</p>
       <p style="margin:0 0 16px;color:#667085;font-size:12px;line-height:1.6">모니터링 대상: ${COVERAGE.map((c) => `<strong style="color:#475467">${esc(c.country)}</strong>(${esc(c.agencies)})`).join(" · ")}</p>
       ${productLine}
       ${updates.length ? (mainUpdates.length ? sections : mainEmpty) + overflowSection + lowSection : empty}
