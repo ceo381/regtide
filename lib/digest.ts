@@ -5,11 +5,16 @@ import { mailFrom, selectAll, supabaseAdmin, type SubscriberRow, type UpdateRow 
 import { COVERAGE, describeSource, sourcesUsed } from "@/lib/source-info";
 import { COLLECT_LOOKBACK_DAYS } from "@/lib/collect";
 import { loadVoteSummary, type VoteSummary } from "@/lib/votes";
-import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, forwardedNoticeHtml, roadmapBlockHtml, shareBlockHtml } from "@/lib/email-common";
+import { EMAIL_FONT, EMAIL_HEAD, disclaimerFooterHtml, esc, forwardedNoticeHtml, roadmapBlockHtml, shareBlockHtml, unsubscribeUrl } from "@/lib/email-common";
 
 /** 참고(low) 항목은 본문 아래 압축 섹션에 한 줄씩 싣는다. 같은 소스가 이 수를 넘으면 앞 3건만 보이고 나머지는 "외 N건 전체 보기" 링크 */
 export const LOW_GROUP_SHOW = 3;
 export const LOW_GROUP_COLLAPSE_OVER = 4;
+/**
+ * 발췌까지 싣는 주요 항목 상한. Gmail 은 HTML 이 약 102KB 를 넘으면 뒷부분을 잘라("메시지 잘림") 면책 고지·구독해지 링크가
+ * 가려진다. 주요 항목 1건 ≈ 2.4KB 이므로 25건까지만 전체 형식으로, 나머지는 제목 한 줄 목록으로 싣는다.
+ */
+export const MAIN_FULL_MAX = 25;
 
 const IMPACT_LABEL: Record<string, { text: string; color: string }> = {
   high: { text: "즉시 조치", color: "#b42318" },
@@ -106,8 +111,12 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
   // 즉시 조치·검토 필요는 관할별 본문에 발췌와 함께, 참고는 하단 압축 섹션에 제목만
   const mainUpdates = updates.filter((u) => u.impact !== "low");
   const lowUpdates = updates.filter((u) => u.impact === "low");
+  const rank = { high: 0, medium: 1 } as Record<string, number>;
+  const mainSorted = [...mainUpdates].sort((a, b) => (rank[a.impact ?? ""] ?? 2) - (rank[b.impact ?? ""] ?? 2));
+  const mainFull = mainSorted.slice(0, MAIN_FULL_MAX);
+  const mainOverflow = mainSorted.slice(MAIN_FULL_MAX);
   const byJ: Partial<Record<Jurisdiction, UpdateRow[]>> = {};
-  for (const u of mainUpdates) (byJ[u.jurisdiction as Jurisdiction] ??= []).push(u);
+  for (const u of mainFull) (byJ[u.jurisdiction as Jurisdiction] ??= []).push(u);
 
   const productLine = sub.products.length
     ? `<p style="margin:0 0 16px;color:#475467;font-size:14px">모니터링 품목: ${sub.products.map((p, i) => esc(productLabel(p, i))).join(", ")}</p>`
@@ -147,6 +156,15 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
   const empty = `<p style="color:#475467;font-size:15px;padding:24px 0">이번 주에는 선택하신 규격·인증에 해당하는 변경 사항이 감지되지 않았습니다.</p>`;
   const mainEmpty = `<p style="color:#475467;font-size:14px;padding:16px 0 4px">이번 주에는 즉시 조치·검토가 필요한 변경 사항이 없습니다. 아래 참고 항목만 확인하시면 됩니다.</p>`;
   const lowSection = renderLowSection(lowUpdates);
+  const overflowSection = mainOverflow.length
+    ? `<h2 style="font-size:16px;margin:28px 0 0;color:#101828">그 밖의 주요 항목 <span style="color:#667085;font-weight:400;font-size:13px">· ${mainOverflow.length}건 — 메일 길이 제한으로 제목만 싣습니다. 제목을 누르면 원문으로 이동합니다.</span></h2><table width="100%" cellpadding="0" cellspacing="0">${mainOverflow
+        .map((u) => {
+          const imp = IMPACT_LABEL[u.impact ?? "medium"] ?? IMPACT_LABEL.medium;
+          const src = describeSource(u.source);
+          return `<tr><td style="padding:6px 0;border-bottom:1px solid #f2f4f7;color:#344054;font-size:13px;line-height:1.5"><span style="display:inline-block;background:${imp.color};color:#fff;border-radius:3px;padding:0 6px;font-size:11px;font-weight:600">${imp.text}</span> <span style="color:#98a2b3;font-size:12px">${fmtDate(u.published_at)} · ${esc(src.agency)}</span><br><a href="${esc(u.url ?? "#")}" style="color:#344054;text-decoration:none">${esc(u.title)}</a></td></tr>`;
+        })
+        .join("")}</table>`
+    : "";
   const countLine = lowUpdates.length ? `총 ${updates.length}건 (주요 ${mainUpdates.length}건 · 참고 ${lowUpdates.length}건)` : `총 ${updates.length}건`;
 
   return `<!doctype html><html lang="ko">${EMAIL_HEAD}<body style="margin:0;background:#f9fafb;font-family:${EMAIL_FONT}">
@@ -159,7 +177,7 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       <p style="margin:0 0 6px;color:#667085;font-size:12px;line-height:1.6"><strong style="color:#475467">정보 수집 기간</strong>: ${fmtDateTime(collectSince)} ~ ${fmtDateTime(generatedAt)} (매일 08:00 KST 수집, 각 기관이 최근 ${COLLECT_LOOKBACK_DAYS}일 내 발표·게재한 항목 기준, 이전 메일에 안내한 항목은 제외) · <strong style="color:#475467">리포트 생성</strong>: ${fmtDateTime(generatedAt)}</p>
       <p style="margin:0 0 16px;color:#667085;font-size:12px;line-height:1.6">모니터링 대상: ${COVERAGE.map((c) => `<strong style="color:#475467">${esc(c.country)}</strong>(${esc(c.agencies)})`).join(" · ")}</p>
       ${productLine}
-      ${updates.length ? (mainUpdates.length ? sections : mainEmpty) + lowSection : empty}
+      ${updates.length ? (mainUpdates.length ? sections : mainEmpty) + overflowSection + lowSection : empty}
       ${roadmapBlockHtml(generatedAt, period.vote, sub.id)}
       ${shareBlockHtml()}
       <hr style="border:0;border-top:1px solid #eaecf0;margin:32px 0 16px">
@@ -206,7 +224,7 @@ export interface SendResult {
 }
 
 /** 메일 발송 추상화 (테스트에서 가짜 발송기 주입용) */
-export interface MailMessage { from: string; to: string; subject: string; html: string }
+export interface MailMessage { from: string; to: string; subject: string; html: string; headers?: Record<string, string> }
 export interface SendOpts { idempotencyKey?: string }
 export interface Mailer {
   send(msg: MailMessage, opts?: SendOpts): Promise<{ id?: string }>;
@@ -329,6 +347,9 @@ export async function sendWeeklyDigests(
         to: sub.email,
         subject: `${testOnly ? "[테스트] " : ""}[RegTide] 이번 주 의료기기 규제 업데이트 ${mine.length}건 (${weekStart} 주)`,
         html: renderDigestHtml(sub, mine, { start: periodStart, end: periodEnd, generatedAt: now, vote }),
+        // 메일 앱의 "구독취소" 버튼용 표준 헤더. 원클릭(List-Unsubscribe-Post)은 넣지 않는다 —
+        // 확인 페이지(GET)를 거쳐야 보안 스캐너의 자동 열기로 해지되는 사고가 없다
+        ...(testOnly ? {} : { headers: { "List-Unsubscribe": `<${unsubscribeUrl(sub.unsubscribe_token)}>` } }),
       },
     });
   }

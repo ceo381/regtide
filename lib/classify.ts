@@ -70,6 +70,8 @@ export function matchCatalog(u: Pick<UpdateRow, "title" | "raw" | "jurisdiction"
 
 export function decideImpact(u: Pick<UpdateRow, "title" | "source" | "jurisdiction">, matched: boolean): ClassifyOutput["impact"] {
   if (!matched) return "none";
+  // 회수·행정처분 공표는 타사 사례 정보이므로 항상 참고 (제목의 품목명·처분명에 "시행"·"기준" 등이 섞여도 올라가지 않게)
+  if (u.source.startsWith("mfds_emedi:")) return "low";
   const t = u.title;
 
   if (u.jurisdiction === "KR") {

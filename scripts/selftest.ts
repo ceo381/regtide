@@ -136,7 +136,7 @@ async function main() {
   });
 
   console.log("\n[5] 발송");
-  const sent: { to: string; subject: string; html: string }[] = [];
+  const sent: { to: string; subject: string; html: string; headers?: Record<string, string> }[] = [];
   const mailer: Mailer = { async send(m) { sent.push(m); return { id: `msg_${sent.length}` }; } };
   db.tables.subscribers.push(
     { id: "s1", email: "gmp@company.kr", unsubscribe_token: "tok1", active: true, products: [{ name: "저주파자극기", category: "2등급", catalogIds: ["kr-gmp"] }], catalog_ids: ["kr-gmp"], last_sent_at: null },
@@ -333,6 +333,11 @@ async function main() {
       const rm = m.html.slice(rmStart, m.html.indexOf("이 리포트가 도움이 되셨다면"));
       assert.ok(!/\bAI\b|인공지능/.test(rm), "새 기능 블록에 AI 언급 없음");
       assert.ok(m.html.includes("원 수신자 전용"), "전달받은 사람에게 구독해지 링크 주의 안내");
+      if (!m.subject.startsWith("[테스트]")) {
+        const lu = m.headers?.["List-Unsubscribe"] ?? "";
+        assert.ok(/^<https:\/\/regtide\.example\/api\/unsubscribe\?token=.+>$/.test(lu), "List-Unsubscribe 헤더(확인 페이지): " + lu);
+        assert.ok(!m.headers?.["List-Unsubscribe-Post"], "원클릭 해지 헤더는 넣지 않음(확인 페이지 경유)");
+      }
     }
   });
   await ok("참고(low) 항목은 하단 압축 섹션에 제목만 싣고, 같은 소스가 4건을 넘으면 3건 + '외 N건 전체 보기' 링크로 접힌다", async () => {
@@ -351,6 +356,11 @@ async function main() {
     // 주요 항목이 없고 참고만 있으면 "변경 없음" 이 아니라 참고 섹션이 실린다
     const onlyLow = renderDigestHtml(sub as never, rows.slice(1, 3) as never, { start: new Date("2026-09-14T00:00:00Z"), end: new Date("2026-09-21T00:00:00Z") });
     assert.ok(onlyLow.includes("아래 참고 항목만 확인") && !onlyLow.includes("감지되지 않았습니다") && onlyLow.includes("참고 <span"));
+    // Gmail 잘림(약 102KB) 방지: 주요 60건 + 참고 60건이어도 100KB 미만, 면책·구독해지 링크 유지
+    const big = [...Array.from({ length: 60 }, (_, i) => ({ ...mk(200 + i, "high"), source: "mfds_rss:data0009", summary_ko: "개정 고시 발췌 ".repeat(40) })), ...Array.from({ length: 60 }, (_, i) => mk(400 + i, "low"))];
+    const bigHtml = renderDigestHtml(sub as never, big as never, { start: new Date("2026-09-14T00:00:00Z"), end: new Date("2026-09-21T00:00:00Z") });
+    assert.ok(Buffer.byteLength(bigHtml) < 100 * 1024, `메일 크기 ${(Buffer.byteLength(bigHtml) / 1024).toFixed(1)}KB`);
+    assert.ok(bigHtml.includes("그 밖의 주요 항목") && bigHtml.includes("· 35건") && bigHtml.includes("/api/unsubscribe?token=tok") && bigHtml.includes("법적 효력이 없습니다"));
     // 참고 줄에도 원문 링크(면책의 '원문에서 확인' 원칙)
     for (let i = 1; i <= 3; i++) assert.ok(html.includes(`portalAdmDispsSeq=${i}"`), `참고 ${i} 원문 링크`);
   });
@@ -767,11 +777,12 @@ async function main() {
     const asRow = (u: typeof first) => ({ id: "x", source: u.source, external_id: u.externalId, jurisdiction: u.jurisdiction, title: u.title, url: u.url ?? null, published_at: null, raw: u.raw ?? null, summary_ko: null, impact: null, catalog_ids: [], matched_keywords: [], classified_at: null, created_at: "" });
     const c1 = classifyOne(asRow(first) as never);
     assert.deepEqual(c1.catalog_ids, ["kr-vigilance"], "회수는 시판후 관리 규격에만: " + JSON.stringify(c1));
-    assert.ok(c1.impact !== "none");
+    assert.equal(c1.impact, "low");
+    assert.equal(classifyOne(asRow({ ...first, title: "[회수·판매중지] 시행 기준 개정 고시 적용 품목 — 업체" }) as never).impact, "low", "제목에 개정·고시가 섞여도 참고");
     const disWithLaw = { ...dr[0], raw: (dr[0].raw ?? "") + "\n위반법령: 「의료기기법」 제6조, 「의료기기법 시행규칙」 제36조 · 표시·기재 · 광고 · 공급내역 보고" };
     const c2 = classifyOne(asRow(disWithLaw) as never);
     assert.deepEqual(c2.catalog_ids, ["kr-vigilance"], "행정처분은 발췌에 법령명이 있어도 시판후 관리 규격에만: " + JSON.stringify(c2));
-    assert.ok(c2.impact !== "none");
+    assert.equal(c2.impact, "low");
   });
 
   globalThis.fetch = realFetch;
