@@ -347,6 +347,12 @@ async function main() {
     const rows = [mk(0, "high"), ...Array.from({ length: 6 }, (_, i) => mk(i + 1, "low")), mk(20, "low", "mfds_emedi:recall")];
     const html = renderDigestHtml(sub as never, rows as never, { start: new Date("2026-09-14T00:00:00Z"), end: new Date("2026-09-21T00:00:00Z"), generatedAt: new Date("2026-09-21T00:00:00Z") });
     assert.ok(html.includes("총 8건 (주요 1건 · 참고 7건)"), "건수 표기");
+    // 수집 기간 표기는 실제 실린 항목의 가장 이른 수집 시각까지 넓어진다 (첫 리포트 14일치와 어긋나지 않게)
+    const early = [{ ...mk(90, "high"), created_at: "2026-09-10T00:00:00Z" }];
+    const eh = renderDigestHtml(sub as never, early as never, { start: new Date("2026-09-14T00:00:00Z"), end: new Date("2026-09-21T00:00:00Z"), generatedAt: new Date("2026-09-21T00:30:00Z"), firstReport: true });
+    assert.ok(/정보 수집 기간<\/strong>: 2026\. 09\. 10\./.test(eh), "수집 기간 시작 = 가장 이른 항목 수집일");
+    assert.ok(eh.includes("첫 리포트이므로") && eh.includes("매일 오전 8시경 수집"));
+    assert.ok(!html.includes("첫 리포트이므로"), "첫 리포트가 아니면 안내 없음");
     assert.ok(html.includes("발췌 본문 0") && !html.includes("발췌 본문 1"), "참고 항목에는 발췌가 없다");
     assert.ok(html.includes("처분 1 —") && html.includes("처분 3 —") && !html.includes("처분 4 —"), "6건 중 3건만 제목 표시");
     assert.ok(html.includes("외 3건 — 의료기기안심책방 행정처분에서 전체 보기") && html.includes('href="https://emedi.mfds.go.kr/disps/MNU20266"'), "나머지는 소스 검색 화면 링크");

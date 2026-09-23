@@ -104,10 +104,15 @@ export function renderLowSection(low: UpdateRow[]): string {
   return `<h2 style="font-size:16px;margin:28px 0 0;color:#101828">참고 <span style="color:#667085;font-weight:400;font-size:13px">· ${low.length}건 — 선택하신 규격과 관련은 있으나 직접 조치가 필요하지 않은 항목입니다. 제목을 누르면 원문으로 이동합니다.</span></h2>${blocks.join("")}`;
 }
 
-export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], period: { start: Date; end: Date; generatedAt?: Date; vote?: VoteSummary }) {
+export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], period: { start: Date; end: Date; generatedAt?: Date; vote?: VoteSummary; firstReport?: boolean }) {
   const generatedAt = period.generatedAt ?? new Date();
   // 수집 기간 표기: 지난 발송(7일 전) 이후 매일 수집. 이전 메일에 안내한 항목은 제외됨
-  const collectSince = new Date(generatedAt.getTime() - 7 * 86400_000);
+  // 실제로 실린 항목의 가장 이른 수집 시각까지 넓힌다 (첫 리포트는 최근 14일치를 담으므로 "지난 7일"로 표기하면 어긋남)
+  const earliestCollected = updates.reduce((m, u) => (u.created_at && u.created_at < m ? u.created_at : m), new Date(generatedAt.getTime() - 7 * 86400_000).toISOString());
+  const collectSince = new Date(earliestCollected);
+  const firstNote = period.firstReport
+    ? `<p style="margin:0 0 6px;color:#175cd3;font-size:13px;line-height:1.6">첫 리포트이므로 지난 한 주뿐 아니라 최근 ${CANDIDATE_DAYS}일 동안 수집된 항목 중 선택하신 규격에 해당하는 것을 함께 담았습니다. 다음 리포트부터는 지난 한 주의 새 항목만 보내드립니다.</p>`
+    : "";
   // 즉시 조치·검토 필요는 관할별 본문에 발췌와 함께, 참고는 하단 압축 섹션에 제목만
   const mainUpdates = updates.filter((u) => u.impact !== "low");
   const lowUpdates = updates.filter((u) => u.impact === "low");
@@ -174,7 +179,8 @@ export function renderDigestHtml(sub: SubscriberRow, updates: UpdateRow[], perio
       <p style="margin:0 0 4px;color:#667085;font-size:13px;letter-spacing:.04em">REGTIDE · 주간 리포트</p>
       <h1 style="margin:0 0 8px;font-size:22px;color:#101828">의료기기 규격·인증 업데이트</h1>
       <p style="margin:0 0 6px;color:#475467;font-size:14px">${fmtDate(period.start.toISOString())} ~ ${fmtDate(new Date(period.end.getTime() - 1).toISOString())} 주간 리포트 · ${countLine}</p>
-      <p style="margin:0 0 6px;color:#667085;font-size:12px;line-height:1.6"><strong style="color:#475467">정보 수집 기간</strong>: ${fmtDateTime(collectSince)} ~ ${fmtDateTime(generatedAt)} (매일 08:00 KST 수집, 각 기관이 최근 ${COLLECT_LOOKBACK_DAYS}일 내 발표·게재한 항목 기준, 이전 메일에 안내한 항목은 제외) · <strong style="color:#475467">리포트 생성</strong>: ${fmtDateTime(generatedAt)}</p>
+      ${firstNote}
+      <p style="margin:0 0 6px;color:#667085;font-size:12px;line-height:1.6"><strong style="color:#475467">정보 수집 기간</strong>: ${fmtDateTime(collectSince)} ~ ${fmtDateTime(generatedAt)} (매일 오전 8시경 수집, 각 기관이 최근 ${COLLECT_LOOKBACK_DAYS}일 내 발표·게재한 항목 기준, 이전 메일에 안내한 항목은 제외) · <strong style="color:#475467">리포트 생성</strong>: ${fmtDateTime(generatedAt)}</p>
       <p style="margin:0 0 16px;color:#667085;font-size:12px;line-height:1.6">모니터링 대상: ${COVERAGE.map((c) => `<strong style="color:#475467">${esc(c.country)}</strong>(${esc(c.agencies)})`).join(" · ")}</p>
       ${productLine}
       ${updates.length ? (mainUpdates.length ? sections : mainEmpty) + overflowSection + lowSection : empty}
@@ -314,6 +320,13 @@ export async function sendWeeklyDigests(
     }
   }
 
+  // 테스트 발송 미리보기: 정기 발송 기록이 하나도 없으면(첫 발송 전) 첫 리포트 안내까지 그대로 보여준다
+  let noDeliveriesYet = false;
+  if (testOnly) {
+    const { count } = await sb.from("deliveries").select("id", { count: "exact", head: true }).eq("status", "sent");
+    noDeliveriesYet = (count ?? 0) === 0;
+  }
+
   // 테스트 발송은 deliveries 에 기록하지 않는다 (정기 발송의 중복 방지 키를 소모하지 않도록)
   const recordMany = async (rows: Record<string, unknown>[]) => {
     if (testOnly || rows.length === 0) return;
@@ -346,7 +359,7 @@ export async function sendWeeklyDigests(
         from,
         to: sub.email,
         subject: `${testOnly ? "[테스트] " : ""}[RegTide] 이번 주 의료기기 규제 업데이트 ${mine.length}건 (${weekStart} 주)`,
-        html: renderDigestHtml(sub, mine, { start: periodStart, end: periodEnd, generatedAt: now, vote }),
+        html: renderDigestHtml(sub, mine, { start: periodStart, end: periodEnd, generatedAt: now, vote, firstReport: testOnly ? noDeliveriesYet : !deliveredIds.has(sub.id) }),
         // 메일 앱의 "구독취소" 버튼용 표준 헤더. 원클릭(List-Unsubscribe-Post)은 넣지 않는다 —
         // 확인 페이지(GET)를 거쳐야 보안 스캐너의 자동 열기로 해지되는 사고가 없다
         ...(testOnly ? {} : { headers: { "List-Unsubscribe": `<${unsubscribeUrl(sub.unsubscribe_token)}>` } }),
